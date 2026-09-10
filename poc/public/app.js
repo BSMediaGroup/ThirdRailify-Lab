@@ -1,8 +1,9 @@
+import {workflowFor,isImageField,safeImageUrl,missingInputs,preparePrompt} from './model-schema.js';
 const $=id=>document.getElementById(id);
 const icon=name=>`<svg class="icon"><use href="/icons.svg#${name}"/></svg>`;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const state={csrf:'',config:null,provider:'replicate',modelId:'black-forest-labs/flux-schnell',model:null,assets:[],jobs:[],projects:[],selected:null,image:null,currentJob:null,mode:'generate',style:'',fileInputs:{},pollTimer:null,chatBusy:false,chatAbort:null,projectId:null};
-let toastTimer;
+const state={csrf:'',config:null,provider:'replicate',modelId:'black-forest-labs/flux-schnell',model:null,assets:[],jobs:[],projects:[],selected:null,image:null,currentJob:null,mode:'generate',style:'',fileInputs:{},pollTimer:null,chatBusy:false,chatAbort:null,projectId:null,chosen:{},modelChoices:{},researchOnly:location.pathname==='/research',activeSessionId:null,restoring:false,paramValues:{},inputBusy:0,loadTicket:0,page:'generate'};
+let toastTimer;const pendingGenerations=new Set();let sessionSwitchToken=0;
 function toast(text,error=false){$('toast').textContent=text;$('toast').classList.toggle('error',error);$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,error?8500:4200);}
 function error(text){$('mainError').textContent=text;$('mainError').hidden=!text;}
 async function api(route,{method='GET',body,signal}={}){
@@ -19,43 +20,46 @@ function storageSet(key,val){try{localStorage.setItem(key,JSON.stringify(val));}
 async function boot(){
   const data=await api('/api/state');state.csrf=data.csrf;state.config=data.config;state.jobs=data.jobs;state.assets=data.assets;state.projects=data.projects;state.catalog=data.catalog;
   if(data.config.fonts.length){
-    const mapping={display:['RailifyDisplay','--display'],body:['RailifyBody','--body'],bodybold:['RailifyBody',null],mono:['RailifyMono','--mono']};
-    const rules=data.config.fonts.map(k=>{const [family]=mapping[k];return `@font-face{font-family:${family};src:url('/brand-fonts/${k}');font-weight:${k==='bodybold'?600:k==='mono'?'100 900':400};font-display:swap}`;}).join('');
+    const mapping={display:['American Captain','--display'],body:['Blinker','--body'],bodybold:['Blinker',null],mono:['Geist Mono','--mono']};
+    const rules=data.config.fonts.map(k=>{const [family]=mapping[k];return `@font-face{font-family:"${family}";src:url('/brand-fonts/${k}');font-weight:${k==='bodybold'?600:k==='mono'?'100 900':400};font-display:swap}`;}).join('');
     const style=document.createElement('style');style.textContent=rules;document.head.append(style);
+    document.fonts.ready.then(()=>drawThumbnail());
     for(const key of data.config.fonts){const [family,varname]=mapping[key];if(varname)document.documentElement.style.setProperty(varname,`'${family}',${getComputedStyle(document.documentElement).getPropertyValue(varname)}`);}
   }
-  $('serverStatus').textContent='Local server connected';updateKeyStatus();renderHistory();renderModelCards(state.catalog);refreshChat();
-  if(innerWidth<=1000){$('appShell').classList.add('research-closed');$('toggleResearch').setAttribute('aria-expanded','false');}
-  const width=storageGet('tr-lab-sidebar',330);document.documentElement.style.setProperty('--research',Math.max(280,Math.min(560,width))+'px');
-  const remembered=storageGet('tr-lab-prompt','');if(remembered)$('prompt').value=remembered;
-  if(state.assets.length)await selectAsset(state.assets[0]);
-  if(state.config.keys.REPLICATE_API_TOKEN){loadModel(state.modelId).catch(e=>{$('schemaStatus').textContent=e.message;});}
+  $('serverStatus').textContent='Local server connected';state.chosen=storageGet('tr-lab-model-choices',{});state.preferences=data.preferences||{};
+  setupBrand();setupLayout();updateKeyStatus();renderHistory();renderModelCards(state.catalog);
+  await initWorkspace();
   schedulePoll();
 }
+
 function updateKeyStatus(){
   $('keyDot').classList.toggle('ready',Object.entries(state.config.keys).some(([k,v])=>k!=='REPLICATE_WEBHOOK_SIGNING_SECRET'&&v));
   updateDirectControls();
 }
 function setMode(mode){
-  state.mode=mode;document.body.classList.toggle('thumbnail-mode',mode==='thumbnail');
-  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+  if(!state.activeSessionId&&!state.restoring){toast('Open or create a project from Library first.');showLibrary();return;}
+  state.mode=mode;state.page=mode;document.body.classList.toggle('thumbnail-mode',mode==='thumbnail');$('appShell').classList.remove('shell-mode');$('libraryPage').hidden=true;$('workspaceSettingsPage').hidden=true;
+  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('libraryButton').classList.remove('active');$('settingsPageButton').classList.remove('active');
   $('generationControls').hidden=mode!=='generate';$('thumbnailControls').hidden=mode!=='thumbnail';$('promptCard').hidden=mode!=='generate';
   $('modeLabel').textContent=mode==='thumbnail'?'Thumbnail composer':'Image studio';$('inspectorTitle').textContent=mode==='thumbnail'?'Composition settings':'Generation settings';$('workTitle').innerHTML=mode==='thumbnail'?'THUMBNAIL COMPOSER<span>.</span>':'THE IMAGE STUDIO<span>.</span>';
-  renderStage();
+  renderStage();renderWorkflow();if(!state.restoring)captureSession(false);resizePanels();
 }
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+
 document.querySelectorAll('[data-provider]').forEach(b=>b.onclick=()=>{
-  state.provider=b.dataset.provider;document.querySelectorAll('[data-provider]').forEach(x=>x.classList.toggle('active',x===b));
+  rememberInputs();state.provider=b.dataset.provider;state.fileInputs={};state.paramValues={};document.querySelectorAll('[data-provider]').forEach(x=>x.classList.toggle('active',x===b));
   error('');$('replicateModelSection').hidden=state.provider!=='replicate';$('directModelSection').hidden=state.provider==='replicate';$('advancedSection').hidden=state.provider!=='replicate';
-  if(state.provider==='replicate')renderParameters();else updateDirectControls();
+  if(state.provider==='replicate')renderParameters();else updateDirectControls();renderWorkflow();captureSession();
 });
-document.querySelectorAll('[data-style]').forEach(b=>b.onclick=()=>{state.style=b.dataset.style;document.querySelectorAll('[data-style]').forEach(x=>x.classList.toggle('active',x===b));$('promptDirection').textContent=state.style?'Added direction: '+state.style:'Your prompt. No hidden embellishment.';});
-on('prompt','input',()=>storageSet('tr-lab-prompt',$('prompt').value));
+document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{state.presetId=b.dataset.preset;state.style=presets()[state.presetId]||'';updatePresetDisplay();captureSession();});
+on('prompt','input',()=>{captureSession();renderWorkflow();});
 
 function renderModelCards(items){
-  $('modelResults').innerHTML=items.length?items.map(m=>`<button class="model-result" data-model-id="${esc(m.id)}"><span class="tag">${esc(m.tag||'Replicate model')}</span>${icon('arrow')}<strong>${esc(m.name)}</strong><small>${esc(m.id)}</small><p>${esc(m.description||'Load to inspect its live schema and model inputs.')}</p></button>`).join(''):'<div class="soft-note">No models found. Try a different search or paste the model URL.</div>';
+  $('modelResults').innerHTML=items.length?items.map(m=>`<button class="model-result" data-model-id="${esc(m.id)}">${safeImageUrl(m.coverImageUrl)?`<img class="model-cover" src="${esc(m.coverImageUrl)}" alt="${esc(m.name)} model example" loading="lazy" referrerpolicy="no-referrer">`:`<span class="model-cover-empty">${icon('image')}</span>`}<span class="model-result-copy"><span class="tag">${esc(m.tag||'Replicate model')}</span><strong>${esc(m.name)}</strong><small>${esc(m.id)}</small><p>${esc(m.description||'Load to inspect its live schema and model inputs.')}</p>${m.runCount!=null?`<span class="model-stats">${new Intl.NumberFormat('en-US',{notation:'compact'}).format(m.runCount)} runs · reported by Replicate</span>`:''}</span>${icon('arrow')}</button>`).join(''):'<div class="soft-note">No models found. Try another search or paste the model URL.</div>';
+  $('modelResults').querySelectorAll('img').forEach(img=>img.onerror=()=>{img.hidden=true;});
   $('modelResults').querySelectorAll('[data-model-id]').forEach(b=>b.onclick=async()=>{try{await loadModel(b.dataset.modelId);$('modelsDialog').close();}catch(e){$('modelSearchError').textContent=e.message;$('modelSearchError').hidden=false;}});
 }
+
 on('modelPicker','click',()=>{$('modelSearchError').hidden=true;renderModelCards(state.catalog);$('modelsDialog').showModal();});
 on('loadModel','click',async()=>{if(!state.config.keys.REPLICATE_API_TOKEN)return showSettings();await loadModel(state.modelId);});
 on('searchModels','click',async()=>{
@@ -67,37 +71,61 @@ on('searchModels','click',async()=>{
 });
 on('modelQuery','keydown',e=>{if(e.key==='Enter'){$('searchModels').click();}});
 async function loadModel(id){
-  $('schemaStatus').textContent='Reading current provider schema…';$('loadModel').disabled=true;
+  const sid=state.activeSessionId,ticket=++state.loadTicket;$('schemaStatus').textContent='Reading current provider schema…';$('loadModel').disabled=true;
   try{
-    const data=await api('/api/model?id='+encodeURIComponent(id));state.model=data.model;state.modelId=data.model.ref||data.model.id;state.fileInputs={};$('advancedJson').value='';
+    const data=await api('/api/model?id='+encodeURIComponent(id));if(state.activeSessionId!==sid||ticket!==state.loadTicket)return;
+    const same=state.modelId===(data.model.ref||data.model.id);if(!same){state.fileInputs={};state.paramValues={};$('advancedJson').value='';}
+    state.model=data.model;state.modelId=data.model.ref||data.model.id;
     $('modelName').textContent=data.model.name;$('modelOwner').textContent=data.model.id.split('/')[0];
     $('schemaStatus').textContent=`Live inputs loaded · version ${String(data.model.version).slice(0,10)}`;
-    if(state.provider==='replicate')renderParameters();
-  }catch(e){$('schemaStatus').textContent=e.message;throw e;}finally{$('loadModel').disabled=false;}
+    if(state.provider==='replicate')renderParameters();renderModelInfo();renderWorkflow();captureSession(false);
+  }catch(e){if(sid===state.activeSessionId)$('schemaStatus').textContent=e.message;throw e;}finally{if(ticket===state.loadTicket)$('loadModel').disabled=false;}
+}
+function rememberInputs(){
+  if(state.provider!=='replicate')return;
+  for(const el of $('parameterForm').querySelectorAll('[data-param]'))state.paramValues[el.dataset.param]=el.value;
 }
 function renderParameters(){
   if(state.provider!=='replicate')return;
   const m=state.model;
-  if(!m){$('parameterForm').innerHTML='<div class="soft-note">Connect Replicate and load the selected model to view its real inputs.</div>';$('fieldCount').textContent='—';return;}
+  if(!m){$('parameterForm').innerHTML='<div class="soft-note">Connect Replicate and load the selected model to view its real inputs.</div>';$('fieldCount').textContent='—';renderWorkflow();return;}
   const fields=Object.entries(m.schema.properties||{}).filter(([k])=>k!==m.promptKey).sort((a,b)=>(a[1]['x-order']??99)-(b[1]['x-order']??99));
   $('fieldCount').textContent=fields.length+' FIELDS';
   $('parameterForm').innerHTML=fields.map(([key,p])=>{
-    const required=(m.schema.required||[]).includes(key),name=p.title||key.replaceAll('_',' '),id='param_'+key,val=p.default??'';
-    const attrs=`id="${esc(id)}" data-param="${esc(key)}" data-type="${esc(p.type||'string')}"`;
+    const required=(m.schema.required||[]).includes(key),name=p.title||key.replaceAll('_',' '),id='param_'+key,val=state.paramValues[key]??p.default??'';
+    const attrs=`id="${esc(id)}" data-param="${esc(key)}" data-type="${esc(p.type||'string')}" aria-required="${required}"`;
     let control;
-    if(p.enum)control=`<select ${attrs}><option value="">Provider default${required?' / choose':''}</option>${p.enum.map(v=>`<option value="${esc(String(v))}" ${v===val?'selected':''}>${esc(String(v))}</option>`).join('')}</select>`;
-    else if(p.type==='boolean')control=`<select ${attrs}><option value="">Provider default</option><option value="true" ${val===true?'selected':''}>Yes</option><option value="false" ${val===false?'selected':''}>No</option></select>`;
+    if(p.enum)control=`<select ${attrs}><option value="">Provider default${required?' / choose':''}</option>${p.enum.map(v=>`<option value="${esc(String(v))}" ${String(v)===String(val)?'selected':''}>${esc(String(v))}</option>`).join('')}</select>`;
+    else if(p.type==='boolean')control=`<select ${attrs}><option value="">Provider default</option><option value="true" ${String(val)==='true'?'selected':''}>Yes</option><option value="false" ${String(val)==='false'?'selected':''}>No</option></select>`;
     else if(p.type==='integer'||p.type==='number')control=`<input ${attrs} type="number" value="${esc(val)}" step="${p.type==='integer'?1:'any'}" ${p.minimum!==undefined?`min="${p.minimum}"`:''} ${p.maximum!==undefined?`max="${p.maximum}"`:''} placeholder="Provider default">`;
-    else if(p.type==='array'||p.type==='object')control=`<textarea ${attrs} rows="2" placeholder='${p.type==='array'?'[ ]':'{ }'}'>${val!==''?esc(JSON.stringify(val)):''}</textarea>`;
-    else control=`<input ${attrs} value="${esc(val)}" placeholder="${p.format==='uri'?'HTTPS image URL or attach below':'Provider default'}">`;
-    const upload=(p.format==='uri'||(p.type==='array'&&(p.items?.format==='uri'||/image/.test(key))))?`<input type="file" accept="image/png,image/jpeg,image/webp" data-reference="${esc(key)}" ${p.type==='array'?'multiple':''}><small data-file-note="${esc(key)}">Reference uploads are sent to this model only when you Generate.</small>`:'';
-    return `<label class="field" for="${esc(id)}">${esc(name)}${required?' *':''}${control}${upload}<small>${esc((p.description||'').slice(0,280))}</small></label>`;
+    else if(p.type==='array'||p.type==='object')control=`<textarea ${attrs} rows="2" placeholder='${p.type==='array'?'[ ]':'{ }'}'>${esc(typeof val==='string'?val:JSON.stringify(val))}</textarea>`;
+    else control=`<input ${attrs} value="${esc(val)}" placeholder="${isImageField(key,p)?'HTTPS image URL or attach below':'Provider default'}">`;
+    const media=isImageField(key,p);
+    const upload=media?`<input type="file" accept="image/png,image/jpeg,image/webp" data-reference="${esc(key)}" ${p.type==='array'?'multiple':''} aria-label="Upload ${esc(name)}"><small data-file-note="${esc(key)}">Saved locally first. Sent to the provider only when you generate.</small><div class="input-preview" data-preview="${esc(key)}"></div><button type="button" class="text-button input-clear" data-clear-input="${esc(key)}">Clear image${p.type==='array'?'s':''}</button>`:'';
+    return `<div class="field"><label for="${esc(id)}">${esc(name)}${required?' *':''}</label>${control}${upload}<small>${esc((p.description||'').slice(0,350))}</small></div>`;
   }).join('')||'<div class="soft-note">This model uses only the prompt.</div>';
   $('parameterForm').querySelectorAll('[data-reference]').forEach(el=>el.onchange=async()=>{
-    try{const files=[...el.files];if(files.length>4)throw new Error('Up to four reference images per field in this POC.');if(files.some(f=>f.size>5*1024*1024))throw new Error('Each reference image must be 5 MB or smaller.');const urls=await Promise.all(files.map(readFile));state.fileInputs[el.dataset.reference]=el.multiple?urls:urls[0];el.parentElement.querySelector('[data-file-note]').textContent=files.map(f=>f.name).join(', ')+' · attached';}catch(e){el.value='';toast(e.message,true);}
+    const sid=state.activeSessionId,model=state.modelId,key=el.dataset.reference,files=[...el.files];if(!files.length)return;
+    state.inputBusy++;renderWorkflow();
+    try{
+      if(files.length>4)throw new Error('Up to four reference images per field in this POC.');if(files.some(f=>f.size>5*1024*1024))throw new Error('Each reference image must be 5 MB or smaller.');
+      const assets=[];for(const file of files){const r=await api('/api/import',{method:'POST',body:{dataUrl:await readFile(file),title:'Input · '+file.name}});assets.push(r.asset);state.assets.unshift(r.asset);}
+      if(sid!==state.activeSessionId||model!==state.modelId){toast('Inputs saved to Library. The original model/session is no longer active.');return;}
+      const urls=assets.map(a=>a.url);state.fileInputs[key]=el.multiple?urls:urls[0];state.paramValues[key]='';$('param_'+key).value='';
+      el.parentElement.querySelector('[data-file-note]').textContent=files.map(f=>f.name).join(', ')+' · saved locally';renderInputPreview(key);captureSession();
+    }catch(e){el.value='';toast(e.message,true);}finally{state.inputBusy--;renderWorkflow();}
   });
-  $('parameterForm').querySelectorAll('[data-param]').forEach(el=>el.addEventListener('input',()=>delete state.fileInputs[el.dataset.param]));
+  $('parameterForm').querySelectorAll('[data-param]').forEach(el=>el.addEventListener('input',()=>{delete state.fileInputs[el.dataset.param];state.paramValues[el.dataset.param]=el.value;renderInputPreview(el.dataset.param);captureSession();renderWorkflow();}));
+  $('parameterForm').querySelectorAll('[data-clear-input]').forEach(b=>b.onclick=()=>{const k=b.dataset.clearInput;delete state.fileInputs[k];state.paramValues[k]='';$('param_'+k).value='';const f=b.parentElement.querySelector('[data-reference]');if(f)f.value='';renderInputPreview(k);captureSession();renderWorkflow();});
+  for(const [k,p] of fields)if(isImageField(k,p))renderInputPreview(k);renderWorkflow();
 }
+function fieldImages(key){let v=state.fileInputs[key];if(v===undefined){const el=$('param_'+key);v=el?.value||state.paramValues[key]||'';if(el?.dataset.type==='array')try{v=JSON.parse(v);}catch{v=[];}}return (Array.isArray(v)?v:[v]).map(safeImageUrl).filter(Boolean).slice(0,4);}
+function renderInputPreview(key){
+  const box=[...$('parameterForm').querySelectorAll('[data-preview]')].find(n=>n.dataset.preview===key);if(!box)return;
+  box.innerHTML=fieldImages(key).map(url=>`<div class="input-preview-item"><img src="${esc(url)}" alt="${esc(key.replaceAll('_',' '))} preview" referrerpolicy="no-referrer"><small>${url.startsWith('/assets/')?'Local input · ready':'Direct URL · preview'}</small></div>`).join('');
+  box.querySelectorAll('img').forEach(img=>img.onerror=()=>{img.hidden=true;const t=img.nextElementSibling;t.className='preview-error';t.textContent='Preview unavailable. Check that this URL is an accessible image.';});
+}
+
 function collectInputs(){
   const data={};
   for(const el of $('parameterForm').querySelectorAll('[data-param]')){
@@ -115,23 +143,32 @@ function collectInputs(){
 }
 function updateDirectControls(){
   if(state.provider==='replicate'||!state.config)return;
-  const p=state.provider,m=state.config.models[p==='openai'?'openaiImage':'xaiImage'];$('directModel').textContent=m;$('fieldCount').textContent=p==='openai'?'2 FIELDS':'1 FIELD';
-  $('parameterForm').innerHTML=p==='openai'?`<label class="field">Output size<select id="directSize"><option value="1536x1024">1536 × 1024 · landscape</option><option value="1024x1024">1024 × 1024 · square</option><option value="1024x1536">1024 × 1536 · portrait</option><option value="1536x864">1536 × 864 · 16:9 (GPT Image 2+)</option><option value="2048x1152">2048 × 1152 · 16:9 (GPT Image 2+)</option></select></label><label class="field">Quality<select id="directQuality"><option value="low">Low · draft</option><option value="medium">Medium</option><option value="high">High</option><option value="auto">Model decides</option></select></label><p class="helper">One image per submission. Custom dimensions depend on the selected model. Direct editing is deferred; Replicate reference-image fields are available when supported.</p>`:`<label class="field">Aspect ratio<select id="directRatio"><option>16:9</option><option>1:1</option><option>3:2</option><option>2:3</option><option>9:16</option></select></label><p class="helper">One image per submission. Uses the direct SpaceXAI image API and saves base64 output locally.</p>`;
+  const p=state.provider;$('fieldCount').textContent=p==='openai'?'2 FIELDS':'1 FIELD';
+  $('parameterForm').innerHTML=p==='openai'?`<label class="field">Output size<select id="directSize"><option value="1536x1024">1536 × 1024 · landscape</option><option value="1024x1024">1024 × 1024 · square</option><option value="1024x1536">1024 × 1536 · portrait</option></select></label><label class="field">Quality<select id="directQuality"><option value="low">Low · draft</option><option value="medium">Medium</option><option value="high">High</option><option value="auto">Model decides</option></select></label><p class="helper">One image per submission. Model-specific options/access are validated by the provider. Direct editing remains deferred.</p>`:`<label class="field">Aspect ratio<select id="directRatio"><option>16:9</option><option>1:1</option><option>3:2</option><option>2:3</option><option>9:16</option></select></label><p class="helper">One image per submission. Output is saved locally.</p>`;
+  loadImageModels().catch(()=>{});renderWorkflow();
 }
 on('generate','click',async()=>{
-  error('');let prompt=$('prompt').value.trim();if(!prompt){error('Describe your image in the prompt box first.');$('prompt').focus();return;}
-  const key={replicate:'REPLICATE_API_TOKEN',openai:'OPENAI_API_KEY',xai:'XAI_API_KEY'}[state.provider];if(!state.config.keys[key]){showSettings();return;}
-  $('generate').disabled=true;
+  if(!state.activeSessionId)return toast('Create a project session first.',true);
+  error('');const sid=state.activeSessionId,provider=state.provider;
+  const key={replicate:'REPLICATE_API_TOKEN',openai:'OPENAI_API_KEY',xai:'XAI_API_KEY'}[provider];if(!state.config.keys[key])return showSettings();
+  if(state.inputBusy)return toast('Wait for the input images to finish saving.',true);
+  if(pendingGenerations.has(sid))return;pendingGenerations.add(sid);renderWorkflow();
   try{
-    if(state.provider==='replicate'&&!state.model)await loadModel(state.modelId);
-    if(state.style)prompt+='\n\nArt direction: '+state.style;
-    const input=state.provider==='replicate'?collectInputs():{};
-    const model=state.provider==='replicate'?state.modelId:state.config.models[state.provider==='openai'?'openaiImage':'xaiImage'];
-    const options=state.provider==='openai'?{size:$('directSize').value,quality:$('directQuality').value}:state.provider==='xai'?{aspect_ratio:$('directRatio').value}:{};
-    const result=await api('/api/generate',{method:'POST',body:{provider:state.provider,model,prompt,input,options,requestId:crypto.randomUUID()}});
-    state.currentJob=result.job.id;state.jobs.unshift(result.job);renderJob();schedulePoll();
-  }catch(e){error(e.message);}finally{$('generate').disabled=false;}
+    if(provider==='replicate'&&!state.model)await loadModel(state.modelId);if(sid!==state.activeSessionId)return;
+    let prompt=$('prompt').value.trim(),input=provider==='replicate'?collectInputs():{};
+    const w=provider==='replicate'?workflowFor(state.model):{hasPrompt:true,promptRequired:true};
+    if(w.hasPrompt&&prompt&&state.style)prompt+='\n\nArt direction: '+state.style;
+    if(provider==='replicate'){
+      input=preparePrompt(input,state.model,w.hasPrompt?prompt:undefined);const missing=missingInputs(input,state.model.schema);if(missing.length)throw new Error('Required inputs: '+missing.map(k=>state.model.schema.properties[k]?.title||k).join(', '));
+    }else if(!prompt)throw new Error('Enter your generation prompt first.');
+    const model=provider==='replicate'?state.modelId:$('imageModelSelect').value;if(!model||(provider!=='replicate'&&$('imageModelSelect').disabled))throw new Error('Choose an image model. Refresh the model list if needed.');
+    const options=provider==='openai'?{size:$('directSize').value,quality:$('directQuality').value}:provider==='xai'?{aspect_ratio:$('directRatio').value}:{};
+    captureSession();const result=await api('/api/generate',{method:'POST',body:{provider,model,prompt:w.hasPrompt?prompt:'',input,options,sessionId:sid,requestId:crypto.randomUUID()}});
+    state.jobs.unshift(result.job);const doc=readDoc(sid);if(doc){doc.currentJob=result.job.id;writeDoc(doc);}
+    if(sid===state.activeSessionId){state.currentJob=result.job.id;renderJob();}renderTabs();schedulePoll();
+  }catch(e){if(sid===state.activeSessionId)error(e.message);else toast(e.message,true);}finally{pendingGenerations.delete(sid);renderWorkflow();}
 });
+
 on('prompt','keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();$('generate').click();}});
 function renderJob(){
   const j=state.jobs.find(x=>x.id===state.currentJob);const running=j&&activeStatus(j.status);
@@ -144,8 +181,14 @@ async function refreshJobs(){
   try{
     const data=await api('/api/jobs');state.jobs=data.jobs;
     for(const j of state.jobs)for(const a of j.assets||[])if(!state.assets.some(x=>x.id===a.id))state.assets.unshift(a);
-    const current=state.jobs.find(x=>x.id===state.currentJob);
-    if(current?.status==='succeeded'&&current.assets.length&&!current.localSelected){await selectAsset(current.assets[0]);state.currentJob=null;toast('Generation complete. Original image saved to your local library.');}
+    for(const j of state.jobs){
+      const sid=j.sessionId||((state.currentJob===j.id)?state.activeSessionId:null),doc=sid&&readDoc(sid);
+      if(doc&&doc.currentJob===j.id&&j.status==='succeeded'&&j.assets.length){
+        doc.assetId=j.assets[0].id;doc.currentJob=null;doc.dirty=true;writeDoc(doc);
+        if(sid===state.activeSessionId){state.currentJob=null;await selectAsset(j.assets[0]);toast('Generation complete. Original saved to this project and Library.');}
+      }
+    }
+
     renderJob();renderHistory();$('serverStatus').textContent='Local server connected';
   }catch(e){$('serverStatus').textContent='Server connection interrupted';error(e.message);}
   schedulePoll();
@@ -153,11 +196,16 @@ async function refreshJobs(){
 on('cancelCurrent','click',async()=>{if(!state.currentJob)return;await api('/api/jobs/'+state.currentJob+'/cancel',{method:'POST',body:{}});await refreshJobs();});
 
 async function selectAsset(asset){
-  state.selected=asset;state.projectId=null;const image=new Image();image.src=asset.url;
+  if(!state.activeSessionId&&!state.restoring)await newSession();const sid=state.activeSessionId;const image=new Image();image.src=asset.url;
   try{await image.decode();}catch{throw new Error('Saved image could not be decoded. Open the library and check its download.');}
-  state.image=image;$('resultImage').src=asset.url;$('resultImage').alt=asset.title||'Generated or imported image';
-  $('useThumbnail').disabled=false;$('downloadOriginal').disabled=false;renderStage();renderHistory();
+  if(sid!==state.activeSessionId)return;state.selected=asset;state.image=image;$('resultImage').src=asset.url;$('resultImage').alt=asset.title||'Generated or imported image';
+  $('useThumbnail').disabled=false;$('downloadOriginal').disabled=false;renderStage();renderHistory();captureSession();
 }
+async function applyAssetToSession(sid,asset,mode){
+  const doc=readDoc(sid);if(doc){doc.assetId=asset.id;doc.dirty=true;if(mode)doc.mode=mode;writeDoc(doc);}
+  if(sid===state.activeSessionId){await selectAsset(asset);if(mode)setMode(mode);}else renderTabs();
+}
+
 function renderStage(){
   const thumb=state.mode==='thumbnail';$('emptyStage').hidden=Boolean(state.image)||thumb;$('resultImage').hidden=!state.image||thumb;$('thumbCanvas').hidden=!thumb;
   if(thumb){drawThumbnail();$('canvasLabel').textContent='COMPOSER / EDITABLE TEXT';}
@@ -176,15 +224,15 @@ function download(url){const a=document.createElement('a');a.href=url;a.download
 on('fullScreen','click',async()=>{if(document.fullscreenElement)await document.exitFullscreen();else await $('stageShell').requestFullscreen();});
 on('importButton','click',()=>$('imageUpload').click());on('importThumb','click',()=>$('imageUpload').click());
 on('imageUpload','change',async e=>{
-  const file=e.target.files[0];if(!file)return;
-  try{if(file.size>12*1024*1024)throw new Error('Import an image smaller than 12 MB.');const result=await api('/api/import',{method:'POST',body:{dataUrl:await readFile(file),title:file.name}});state.assets.unshift(result.asset);await selectAsset(result.asset);toast('Image saved locally. It has not been sent to an AI provider.');}finally{e.target.value='';}
+  const file=e.target.files[0];if(!file)return;const sid=state.activeSessionId||await newSession();
+  try{if(file.size>12*1024*1024)throw new Error('Import an image smaller than 12 MB.');const result=await api('/api/import',{method:'POST',body:{dataUrl:await readFile(file),title:file.name}});state.assets.unshift(result.asset);await applyAssetToSession(sid,result.asset);toast('Image saved locally. It has not been sent to an AI provider.');}finally{e.target.value='';}
 });
 
 const thumbIds=['thumbSize','thumbFit','thumbTitle','thumbFontSize','thumbColor','thumbAccent','thumbX','thumbY','thumbBadge','thumbSubtitle','thumbDim','thumbBrand','exportType'];
 $('thumbTitle').value='YOUR NEXT\nBIG IDEA';
 function thumbSettings(){return Object.fromEntries(thumbIds.map(id=>[id,$(id).type==='checkbox'?$(id).checked:$(id).value]));}
 function applySettings(settings){for(const id of thumbIds)if(settings[id]!==undefined){if($(id).type==='checkbox')$(id).checked=Boolean(settings[id]);else $(id).value=settings[id];}drawThumbnail();}
-for(const id of thumbIds)on(id,'input',drawThumbnail);
+for(const id of thumbIds)on(id,'input',()=>{drawThumbnail();captureSession();});
 function wrapText(ctx,text,maxWidth){
   const lines=[];
   for(const paragraph of text.split('\n')){
@@ -200,7 +248,7 @@ function drawThumbnail(){
   const dim=Number($('thumbDim').value)/100;ctx.fillStyle=`rgba(0,0,0,${dim})`;ctx.fillRect(0,0,w,h);
   const shade=ctx.createLinearGradient(0,0,0,h);shade.addColorStop(0,'#00000000');shade.addColorStop(1,'#00000099');ctx.fillStyle=shade;ctx.fillRect(0,0,w,h);
   const fonts=getComputedStyle(document.documentElement),display=fonts.getPropertyValue('--display').trim(),mono=fonts.getPropertyValue('--mono').trim(),body=fonts.getPropertyValue('--body').trim();
-  const x=w*Number($('thumbX').value)/100,y=h*Number($('thumbY').value)/100,size=Number($('thumbFontSize').value)*scale;ctx.font=`800 ${size}px ${display}`;ctx.textBaseline='top';ctx.lineJoin='round';const lines=wrapText(ctx,$('thumbTitle').value.toUpperCase(),w-x-w*.055);const lineH=size*.98;
+  const x=w*Number($('thumbX').value)/100,y=h*Number($('thumbY').value)/100,size=Number($('thumbFontSize').value)*scale;ctx.font=`${state.config?.fonts.includes('display')?400:800} ${size}px ${display}`;ctx.textBaseline='top';ctx.lineJoin='round';const lines=wrapText(ctx,$('thumbTitle').value.toUpperCase(),w-x-w*.055);const lineH=size*.98;
   ctx.shadowColor='#000000b3';ctx.shadowBlur=12*scale;ctx.shadowOffsetY=3*scale;ctx.lineWidth=4*scale;ctx.strokeStyle='#080c06';ctx.fillStyle=$('thumbColor').value;
   lines.forEach((line,i)=>{ctx.strokeText(line,x,y+i*lineH,w-x-w*.055);ctx.fillText(line,x,y+i*lineH,w-x-w*.055);});ctx.shadowBlur=0;ctx.shadowOffsetY=0;
   ctx.fillStyle=accent;ctx.fillRect(x,y-22*scale,72*scale,5*scale);
@@ -212,31 +260,44 @@ function drawThumbnail(){
 let dragging=false;
 $('thumbCanvas').addEventListener('pointerdown',e=>{dragging=true;$('thumbCanvas').setPointerCapture(e.pointerId);moveTitle(e);});
 $('thumbCanvas').addEventListener('pointermove',e=>{if(dragging)moveTitle(e);});
-$('thumbCanvas').addEventListener('pointerup',()=>dragging=false);
+$('thumbCanvas').addEventListener('pointerup',()=>{dragging=false;captureSession();});
 function moveTitle(e){const r=$('thumbCanvas').getBoundingClientRect();$('thumbX').value=Math.max(5,Math.min(80,100*(e.clientX-r.left)/r.width));$('thumbY').value=Math.max(10,Math.min(85,100*(e.clientY-r.top)/r.height));drawThumbnail();}
 on('demoButton','click',async()=>{
+  const sid=state.activeSessionId||await newSession();
   const c=document.createElement('canvas');c.width=1280;c.height=720;const ctx=c.getContext('2d');const g=ctx.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#19192b');g.addColorStop(.42,'#060b0e');g.addColorStop(1,'#2d2a0c');ctx.fillStyle=g;ctx.fillRect(0,0,1280,720);
   const light=ctx.createRadialGradient(840,250,5,850,260,500);light.addColorStop(0,'#a48a374f');light.addColorStop(1,'#10101700');ctx.fillStyle=light;ctx.fillRect(0,0,1280,720);
   ctx.save();ctx.translate(850,350);ctx.rotate(-.3);for(let i=0;i<26;i++){ctx.beginPath();ctx.ellipse(0,0,90+i*13,140+i*9,0,0,Math.PI*2);ctx.strokeStyle=`rgba(${i%3===0?'211,184,80':'106,91,161'},${.05+(26-i)/80})`;ctx.lineWidth=i%4===0?3:1;ctx.stroke();}ctx.restore();
   ctx.strokeStyle='#b2983433';for(let i=0;i<20;i++){ctx.beginPath();ctx.moveTo(40+i*75,720);ctx.lineTo(760+i*12,0);ctx.stroke();}
-  const out=await api('/api/import',{method:'POST',body:{dataUrl:c.toDataURL('image/png'),title:'Layout study — procedural artwork, not AI-generated'}});state.assets.unshift(out.asset);await selectAsset(out.asset);setMode('thumbnail');toast('Layout study loaded. This is procedural demo artwork, not an AI generation.');
+  const out=await api('/api/import',{method:'POST',body:{dataUrl:c.toDataURL('image/png'),title:'Layout study — procedural artwork, not AI-generated'}});state.assets.unshift(out.asset);await applyAssetToSession(sid,out.asset,'thumbnail');toast('Layout study loaded. This is procedural demo artwork, not an AI generation.');
 });
-on('saveProject','click',async()=>{const name=prompt('Project name',state.projects.find(p=>p.id===state.projectId)?.name||'New thumbnail');if(!name)return;const r=await api('/api/projects',{method:'POST',body:{id:state.projectId,name,project:{version:1,assetId:state.selected?.id||null,settings:thumbSettings()}}});state.projectId=r.project.id;const i=state.projects.findIndex(p=>p.id===r.project.id);if(i>=0)state.projects[i]=r.project;else state.projects.push(r.project);toast('Project saved on disk. Reopen it from Library.');});
+on('saveProject','click',saveSession);on('saveSession','click',saveSession);on('discardSession','click',discardSession);
 on('exportThumb','click',async()=>{
-  await document.fonts.ready;drawThumbnail();const format=$('exportType').value;const r=await api('/api/export',{method:'POST',body:{dataUrl:$('thumbCanvas').toDataURL('image/'+format,.93),title:$('thumbTitle').value.replaceAll('\n',' ')||'Thumbnail'}});state.assets.unshift(r.asset);renderHistory();download(r.asset.url+'?download=1');toast('Export saved in .data/assets and sent to your browser downloads.');
+  const sid=state.activeSessionId;await document.fonts.ready;if(sid!==state.activeSessionId)throw new Error('Project changed before export. Select it again to export.');drawThumbnail();const format=$('exportType').value;const r=await api('/api/export',{method:'POST',body:{dataUrl:$('thumbCanvas').toDataURL('image/'+format,.93),title:$('thumbTitle').value.replaceAll('\n',' ')||'Thumbnail'}});state.assets.unshift(r.asset);renderHistory();download(r.asset.url+'?download=1');toast('Export saved in .data/assets and sent to your browser downloads.');
 });
 
 async function showLibrary(){
-  const r=await api('/api/state');state.assets=r.assets;state.projects=r.projects;state.jobs=r.jobs;
-  $('projectList').innerHTML=state.projects.length?state.projects.map(p=>`<button class="project-chip" data-project="${p.id}">${esc(p.name)}<small>${esc(new Date(p.updatedAt).toLocaleString())}</small></button>`).join(''):'<p class="helper">Save a composition to keep its editable text and layout.</p>';
-  $('assetLibrary').innerHTML=state.assets.length?state.assets.map(a=>`<button class="asset-tile" data-asset="${a.id}"><img src="${a.url}" loading="lazy" alt="${esc(a.title||a.source)}"><span>${esc(a.title||a.source)}</span></button>`).join(''):'<p class="helper">No saved images yet.</p>';
-  $('jobList').innerHTML=state.jobs.length?state.jobs.map(j=>`<div class="job-row"><div><strong>${esc(j.prompt.slice(0,110))}</strong><p>${esc(j.provider+' / '+j.model)}</p><span class="micro">${esc(niceStatus(j.status))} · ${esc(new Date(j.createdAt).toLocaleString())}</span>${j.error?`<div class="error-message">${esc(j.error)}</div>`:''}</div><div class="job-buttons"><button class="text-button" data-reuse="${j.id}">Reuse prompt</button>${j.providerUrl?`<a href="${esc(j.providerUrl)}" target="_blank" rel="noopener noreferrer" class="text-button">Provider ↗</a>`:''}${j.provider==='replicate'&&j.providerId&&['download_failed','interrupted'].includes(j.status)?`<button class="button compact" data-retry="${j.id}">Retry download</button>`:''}</div></div>`).join(''):'<p class="helper">No generation jobs have been submitted.</p>';
-  $('assetLibrary').querySelectorAll('[data-asset]').forEach(b=>b.onclick=async()=>{try{await selectAsset(state.assets.find(a=>a.id===b.dataset.asset));$('libraryDialog').close();}catch(e){toast(e.message,true);}});
-  $('projectList').querySelectorAll('[data-project]').forEach(b=>b.onclick=async()=>{try{const p=state.projects.find(p=>p.id===b.dataset.project);if(p.project.assetId){const a=state.assets.find(a=>a.id===p.project.assetId);if(!a)throw new Error('Project image is not in the local library.');await selectAsset(a);}else{state.image=null;state.selected=null;}state.projectId=p.id;setMode('thumbnail');applySettings(p.project.settings);$('libraryDialog').close();}catch(e){toast(e.message,true);}});
-  $('jobList').querySelectorAll('[data-reuse]').forEach(b=>b.onclick=()=>{$('prompt').value=state.jobs.find(j=>j.id===b.dataset.reuse).prompt;setMode('generate');$('libraryDialog').close();toast('Prompt restored. Check the selected model/settings before generating.');});
-  $('jobList').querySelectorAll('[data-retry]').forEach(b=>b.onclick=async()=>{try{await api('/api/jobs/'+b.dataset.retry+'/download',{method:'POST',body:{}});state.currentJob=b.dataset.retry;$('libraryDialog').close();await refreshJobs();}catch(e){toast(e.message,true);}});
-  $('libraryDialog').showModal();
+  if(state.researchOnly)return location.assign('/');captureSession(false);showShellPage('library');
+  const r=await api('/api/state');state.assets=r.assets;state.projects=r.projects;state.jobs=r.jobs;renderLibrary();
 }
+function renderLibrary(){
+  const query=$('librarySearch').value.trim().toLowerCase(),matches=v=>String(v||'').toLowerCase().includes(query);
+  const projects=state.projects.filter(p=>matches(p.name)),assets=state.assets.filter(a=>matches(a.title||a.source));
+  $('projectList').innerHTML=projects.length?projects.map(p=>`<div class="project-entry"><button class="project-chip" data-project="${p.id}">${esc(p.name)}<small>Project + research · ${esc(new Date(p.updatedAt).toLocaleString('en-US'))}</small></button><button class="icon-button danger-text" data-delete-project="${p.id}" aria-label="Delete session ${esc(p.name)}">${icon('trash')}</button></div>`).join(''):'<p class="helper">No saved projects here. Create a new session, or clear the search.</p>';
+  $('assetLibrary').innerHTML=assets.length?assets.map(a=>`<div class="asset-entry"><button class="asset-tile" data-asset="${a.id}"><img src="${a.url}" loading="lazy" alt="${esc(a.title||a.source)}"><span>${esc(a.title||a.source)}</span></button><button class="icon-button danger-text asset-delete" data-delete-asset="${a.id}" aria-label="Delete image ${esc(a.title||a.source)}">${icon('trash')}</button></div>`).join(''):'<p class="helper">No matching images yet.</p>';
+  $('jobList').innerHTML=state.jobs.filter(j=>matches(j.prompt||j.model)).map(j=>`<div class="job-row"><div><strong>${esc((j.prompt||j.model+' · input-based run').slice(0,110))}</strong><p>${esc(j.provider+' / '+j.model)}</p><span class="micro">${esc(niceStatus(j.status))} · ${esc(new Date(j.createdAt).toLocaleString('en-US'))}</span>${j.error?`<div class="error-message">${esc(j.error)}</div>`:''}</div><div class="job-buttons">${j.providerUrl?`<a href="${esc(j.providerUrl)}" target="_blank" rel="noopener noreferrer" class="text-button">Provider ↗</a>`:''}${j.provider==='replicate'&&j.providerId&&j.status==='download_failed'?`<button class="button compact" data-retry="${j.id}">Retry download</button>`:''}<button class="text-button danger-text" data-delete-job="${j.id}" ${activeStatus(j.status)?'disabled':''}>Delete history</button></div></div>`).join('')||'<p class="helper">No generation jobs.</p>';
+  $('assetLibrary').querySelectorAll('[data-asset]').forEach(b=>b.onclick=async()=>{try{if(!state.activeSessionId)await newSession();setMode('generate');await selectAsset(state.assets.find(a=>a.id===b.dataset.asset));}catch(e){toast(e.message,true);}});
+  $('projectList').querySelectorAll('[data-project]').forEach(b=>b.onclick=()=>openSession(b.dataset.project).catch(e=>toast(e.message,true)));
+  $('jobList').querySelectorAll('[data-retry]').forEach(b=>b.onclick=async()=>{try{await api('/api/jobs/'+b.dataset.retry+'/download',{method:'POST',body:{}});await refreshJobs();await showLibrary();}catch(e){toast(e.message,true);}});
+  for(const [attribute,kind,message] of [['project','projects','Delete this saved project and its saved research? Images and exports will remain.'],['asset','assets','Permanently delete this local image? This does not change provider-side files.'],['job','jobs','Delete this generation history? Saved images remain.']]){
+    $('libraryPage').querySelectorAll('[data-delete-'+attribute+']').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset['delete'+attribute[0].toUpperCase()+attribute.slice(1)];
+      if(kind==='assets'&&openDocs().some(d=>d.assetId===id||JSON.stringify(d.generation?.input||{}).includes('/assets/'+id)))return toast('This image is used by an open project. Remove it there or close that project first.',true);
+      if(!await askSession({title:'Delete '+(attribute==='project'?'saved project':attribute)+'?',text:message,confirm:'Delete',discard:false}))return;
+      b.disabled=true;try{const out=await api('/api/'+kind+'/'+id+'/delete',{method:'POST',body:{}});if(kind==='projects'){const d=readDoc(id);if(d){d.saved=false;d.dirty=true;writeDoc(d);updateSessionLabel();}}await showLibrary();renderHistory();toast(out.message);}catch(e){toast(e.message,true);}finally{b.disabled=false;}
+    });
+  }
+}
+
 on('libraryButton','click',showLibrary);on('allHistory','click',showLibrary);
 on('helpButton','click',()=>$('helpDialog').showModal());
 
@@ -244,76 +305,347 @@ function showSettings(){
   const cards=[['REPLICATE_API_TOKEN','Replicate','replicate','https://replicate.com/account/api-tokens'],['OPENAI_API_KEY','OpenAI / GPT','openai','https://platform.openai.com/api-keys'],['XAI_API_KEY','Grok / SpaceXAI','xai','https://console.x.ai/']];
   $('keyFields').innerHTML=cards.map(([key,name,p,url])=>`<section class="key-card"><div class="key-card-head"><span>${name}</span><span class="key-state ${state.config.keys[key]?'set':''}">${state.config.keys[key]?'KEY SAVED · NOT A LIVE VERIFICATION':'NOT CONFIGURED'}</span></div><div class="key-row"><input type="password" id="key_${key}" autocomplete="new-password" spellcheck="false" placeholder="${state.config.keys[key]?'Saved — leave blank to keep':'Paste your API key'}" aria-label="${name} API key"><button type="button" class="button compact" data-test-provider="${p}">Test</button></div><p><a href="${url}" target="_blank" rel="noopener noreferrer">Open provider key console ↗</a> · Keys are never returned to this page.</p></section>`).join('');
   const names=[['OPENAI_IMAGE_MODEL','OpenAI image model',state.config.models.openaiImage],['OPENAI_CHAT_MODEL','OpenAI chat model',state.config.models.openaiChat],['XAI_IMAGE_MODEL','Grok image model',state.config.models.xaiImage],['XAI_CHAT_MODEL','Grok chat model',state.config.models.xaiChat]];
-  $('modelSettings').innerHTML=names.map(([k,label,v])=>`<label class="field">${label}<input id="cfg_${k}" value="${esc(v)}" spellcheck="false"></label>`).join('');
+  $('modelSettings').innerHTML=names.map(([k,label,v])=>`<label class="field">${label}<select id="cfg_${k}"><option value="${esc(v)}">${esc(v||'Load provider models')}</option></select></label>`).join('');
   $('keyFields').querySelectorAll('[data-test-provider]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await saveConnections(false);const result=await api('/api/settings/test',{method:'POST',body:{provider:b.dataset.testProvider}});settingsNote(result.message);}catch(e){settingsNote(e.message,true);}finally{b.disabled=false;}});
-  $('settingsMessage').hidden=true;$('settingsDialog').showModal();
+  $('settingsMessage').hidden=true;$('settingsDialog').showModal();refreshSettingsModels().catch(e=>settingsNote(e.message,true));showBrandStatus();
 }
 function settingsNote(message,bad=false){$('settingsMessage').textContent=message;$('settingsMessage').classList.toggle('error-message',bad);$('settingsMessage').hidden=false;}
 async function saveConnections(announce=true){
   const vals={};for(const k of ['REPLICATE_API_TOKEN','OPENAI_API_KEY','XAI_API_KEY']){if($('key_'+k)?.value)vals[k]=$('key_'+k).value;}
-  for(const k of ['OPENAI_IMAGE_MODEL','OPENAI_CHAT_MODEL','XAI_IMAGE_MODEL','XAI_CHAT_MODEL'])vals[k]=$('cfg_'+k).value;
+  for(const k of ['OPENAI_IMAGE_MODEL','OPENAI_CHAT_MODEL','XAI_IMAGE_MODEL','XAI_CHAT_MODEL'])if($('cfg_'+k)?.value)vals[k]=$('cfg_'+k).value;
   const r=await api('/api/settings',{method:'POST',body:vals});state.config=r.config;
   for(const k of ['REPLICATE_API_TOKEN','OPENAI_API_KEY','XAI_API_KEY']){$('key_'+k).value='';$('key_'+k).placeholder=state.config.keys[k]?'Saved — leave blank to keep':'Paste your API key';const chip=$('key_'+k).closest('.key-card').querySelector('.key-state');chip.textContent=state.config.keys[k]?'KEY SAVED · NOT A LIVE VERIFICATION':'NOT CONFIGURED';chip.classList.toggle('set',state.config.keys[k]);}
-  updateKeyStatus();refreshChatCaption();if(announce)settingsNote('Saved to this Lab folder’s .env file. Use Test to verify provider authentication. No restart is needed.');
+  state.modelChoices={};updateKeyStatus();loadChatModels().catch(()=>{});refreshChatCaption();if(announce)settingsNote('Saved to this Lab folder’s .env file. Use Test to verify provider authentication. No restart is needed.');
 }
 on('connections','click',showSettings);on('saveSettings','click',async()=>{try{await saveConnections();}catch(e){settingsNote(e.message,true);}});
 on('fetchWebhookKey','click',async()=>{try{await saveConnections(false);const r=await api('/api/settings/webhook-key',{method:'POST',body:{}});state.config=r.config;settingsNote(r.message);}catch(e){settingsNote(e.message,true);}});
 
-function toggleResearch(){const closed=$('appShell').classList.toggle('research-closed');$('toggleResearch').setAttribute('aria-expanded',String(!closed));}
-on('toggleResearch','click',toggleResearch);on('collapseResearch','click',toggleResearch);
+function toggleResearch(){if(state.researchOnly)return;const closed=$('appShell').classList.toggle('research-closed');$('toggleResearch').setAttribute('aria-expanded',String(!closed));setResearchWidth(storageGet('tr-lab-sidebar',330),false);}
+on('toggleResearch','click',()=>setLayoutMenu($('layoutMenu').hidden));on('collapseResearch','click',toggleResearch);
 let resizing=false;
 $('resizeHandle').addEventListener('pointerdown',e=>{resizing=true;$('resizeHandle').setPointerCapture(e.pointerId);document.body.classList.add('is-resizing');});
-$('resizeHandle').addEventListener('pointermove',e=>{if(!resizing)return;const w=Math.max(280,Math.min(560,innerWidth-e.clientX));document.documentElement.style.setProperty('--research',w+'px');$('resizeHandle').setAttribute('aria-valuenow',String(w));});
-$('resizeHandle').addEventListener('pointerup',()=>{resizing=false;document.body.classList.remove('is-resizing');storageSet('tr-lab-sidebar',parseInt(getComputedStyle(document.documentElement).getPropertyValue('--research')));});
-on('resizeHandle','keydown',e=>{if(!['ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();const v=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--research'))+(e.key==='ArrowLeft'?20:-20);const w=Math.max(280,Math.min(560,v));document.documentElement.style.setProperty('--research',w+'px');$('resizeHandle').setAttribute('aria-valuenow',String(w));storageSet('tr-lab-sidebar',w);});
-function researchTab(tab){$('chatPanel').hidden=tab!=='chat';$('imagesPanel').hidden=tab!=='images';$('chatTab').classList.toggle('active',tab==='chat');$('imagesTab').classList.toggle('active',tab==='images');$('chatTab').setAttribute('aria-selected',String(tab==='chat'));$('imagesTab').setAttribute('aria-selected',String(tab==='images'));}
+$('resizeHandle').addEventListener('pointermove',e=>{if(resizing)setResearchWidth(innerWidth-e.clientX,false);});
+function endResize(){if(!resizing)return;resizing=false;document.body.classList.remove('is-resizing');storageSet('tr-lab-sidebar',parseInt(getComputedStyle(document.documentElement).getPropertyValue('--research')));}
+$('resizeHandle').addEventListener('pointerup',endResize);$('resizeHandle').addEventListener('pointercancel',endResize);$('resizeHandle').addEventListener('lostpointercapture',endResize);
+on('resizeHandle','dblclick',()=>setResearchWidth(330));
+on('resizeHandle','keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const old=parseInt(getComputedStyle(document.documentElement).getPropertyValue('--research'));setResearchWidth(e.key==='Home'?280:e.key==='End'?researchMax():old+(e.key==='ArrowLeft'?1:-1)*(e.shiftKey?80:20));});
+function researchTab(tab){state.researchTab=tab;$('chatPanel').hidden=tab!=='chat';$('imagesPanel').hidden=tab!=='images';$('chatTab').classList.toggle('active',tab==='chat');$('imagesTab').classList.toggle('active',tab==='images');$('chatTab').setAttribute('aria-selected',String(tab==='chat'));$('imagesTab').setAttribute('aria-selected',String(tab==='images'));}
 on('chatTab','click',()=>researchTab('chat'));on('imagesTab','click',()=>researchTab('images'));
 on('googleSearch','click',()=>{const q=$('googleQuery').value.trim();if(!q)throw new Error('Enter an image search first.');window.open('https://www.google.com/search?tbm=isch&q='+encodeURIComponent(q),'_blank','noopener,noreferrer');});
 on('googleQuery','keydown',e=>{if(e.key==='Enter')$('googleSearch').click();});
 const welcomeMarkup=$('chatMessages').innerHTML;
-const chats={openai:storageGet('tr-lab-chat-openai',[]),xai:storageGet('tr-lab-chat-xai',[])};
+const chats={openai:[],xai:[]};
 function chatProvider(){return $('chatProvider').value;}
-function refreshChatCaption(){if(!state.config)return;$('chatModelCaption').textContent=(chatProvider()==='openai'?state.config.models.openaiChat:state.config.models.xaiChat)+' · No web tools';}
-function addMessage(role,text){
-  const node=document.createElement('div');node.className='chat-message '+role;
-  const head=document.createElement('div');head.className='message-head';head.textContent=role==='user'?'YOU':chatProvider()==='openai'?'GPT / OPENAI':'GROK / SPACEXAI';
-  const body=document.createElement('div');body.className='message-text';body.textContent=text;node.append(head,body);$('chatMessages').append(node);return node;
+function chatKey(p,sid=state.activeSessionId){return 'tr-lab-v3-chat:'+sid+':'+p;}
+function draftKey(p,sid=state.activeSessionId){return 'tr-lab-v3-chat-draft:'+sid+':'+p;}
+function refreshChatCaption(){if(!state.config)return;const model=$('chatModelSelect').value||'Select a model';$('chatModelCaption').textContent=model+' · No web tools';$('chatModelSummary').textContent=model;}
+function addMessage(role,text,provider=chatProvider()){
+  const node=document.createElement('div');node.className='chat-message '+role;const head=document.createElement('div');head.className='message-head';head.textContent=role==='user'?'YOU':provider==='openai'?'GPT / OPENAI':'GROK';const body=document.createElement('div');body.className='message-text';body.textContent=text;node.append(head,body);$('chatMessages').append(node);return node;
 }
-function attachActions(node,text){
-  const div=document.createElement('div');div.className='message-actions';
-  const copy=document.createElement('button');copy.className='text-button';copy.textContent='Copy';copy.onclick=()=>navigator.clipboard.writeText(text).then(()=>toast('Copied.'));
-  const use=document.createElement('button');use.className='text-button';use.textContent='Use as prompt';use.onclick=()=>{$('prompt').value=text;setMode('generate');toast('Response placed in the prompt. Review it before generating.');};div.append(copy,use);node.append(div);
+function attachActions(node,text,sid=state.activeSessionId){const div=document.createElement('div');div.className='message-actions';const copy=document.createElement('button');copy.className='text-button';copy.textContent='Copy';copy.onclick=()=>navigator.clipboard.writeText(text).then(()=>toast('Copied.'));const use=document.createElement('button');use.className='text-button';use.textContent='Use as prompt';use.onclick=()=>useResearchPrompt(text,sid);div.append(copy,use);node.append(div);}
+function bindSuggestions(){document.querySelectorAll('[data-chat-prompt]').forEach(b=>b.onclick=()=>{$('chatInput').value=b.dataset.chatPrompt;storageSet(draftKey(chatProvider()),$('chatInput').value);markResearchDirty();$('chatInput').focus();});}
+function refreshChat(){
+  refreshChatCaption();const sid=state.activeSessionId;
+  $('chatInput').disabled=!sid;$('chatProvider').disabled=!sid;$('sendChat').disabled=!sid;
+  const history=sid?storageGet(chatKey(chatProvider()),[]):[];chats[chatProvider()]=history;
+  $('chatMessages').innerHTML=sid?(history.length?'':welcomeMarkup):'<div class="chat-welcome"><h3>No open project.</h3><p>Open a project from Library to continue its research.</p></div>';
+  for(const m of history){const node=addMessage(m.role,m.content);if(m.role==='assistant')attachActions(node,m.content,sid);}bindSuggestions();
+  const busy=chatRun&&chatRun.sid===sid&&chatRun.provider===chatProvider();if(busy&&chatRun.full){const node=addMessage('assistant',chatRun.full);node.id='activeChatResponse';}
+  $('sendChat').innerHTML=icon(busy?'close':'send');$('sendChat').setAttribute('aria-label',busy?'Stop chat response':'Send chat message');$('chatStatus').textContent=busy?'RESPONSE IN PROGRESS':'PROJECT CONVERSATION';
 }
-function bindSuggestions(){document.querySelectorAll('[data-chat-prompt]').forEach(b=>b.onclick=()=>{$('chatInput').value=b.dataset.chatPrompt;$('chatInput').focus();});}
-function refreshChat(){refreshChatCaption();const history=chats[chatProvider()];$('chatMessages').innerHTML=history.length?'':welcomeMarkup;for(const m of history){const node=addMessage(m.role,m.content);if(m.role==='assistant')attachActions(node,m.content);}bindSuggestions();}
-on('chatProvider','change',()=>{if(state.chatBusy){$('chatProvider').value=state.chatActiveProvider;return;}refreshChat();toast('Switched provider. Conversations stay separate.');});
-on('newChat','click',()=>{if(state.chatBusy)throw new Error('Stop the current response first.');if(chats[chatProvider()].length&&!confirm('Clear this provider’s local conversation?'))return;chats[chatProvider()]=[];storageSet('tr-lab-chat-'+chatProvider(),[]);refreshChat();});
-on('sendChat','click',async()=>{
-  if(state.chatBusy){state.chatAbort?.abort();return;}
-  const p=chatProvider(),text=$('chatInput').value.trim();if(!text)return;
-  if(!state.config.keys[p==='openai'?'OPENAI_API_KEY':'XAI_API_KEY'])return showSettings();
-  if(chats[p].length>=38)throw new Error('Start a new chat to stay within the POC conversation limit.');
-  if(!chats[p].length)$('chatMessages').innerHTML='';
-  chats[p].push({role:'user',content:text});storageSet('tr-lab-chat-'+p,chats[p]);addMessage('user',text);$('chatInput').value='';
-  const waiting=document.createElement('div');waiting.className='thinking-indicator';waiting.innerHTML='<i></i><i></i><i></i><span>Waiting for response…</span>';$('chatMessages').append(waiting);
-  state.chatBusy=true;state.chatActiveProvider=p;state.chatAbort=new AbortController();$('chatProvider').disabled=true;$('sendChat').innerHTML=icon('close');$('sendChat').setAttribute('aria-label','Stop chat response');$('chatStatus').textContent='REQUEST IN PROGRESS';
-  let responseNode=null,full='';
+on('chatProvider','change',()=>{state.remoteChatBusy=false;saveResearchPrefs();$('chatInput').value=storageGet(draftKey(chatProvider()),'');refreshChat();loadChatModels().catch(()=>{});});
+on('newChat','click',()=>{if(!state.activeSessionId)return;if(chatBusyForSession())throw new Error('Stop or finish the current response first.');archiveChat();storageSet(chatKey(chatProvider()),[]);storageSet(draftKey(chatProvider()),'');$('chatInput').value='';markResearchDirty();refreshChat();toast('Previous conversation archived within this project.');});
+on('deleteChat','click',async()=>{if(!state.activeSessionId)return;if(chatBusyForSession())throw new Error('Stop or finish the current response first.');if(!await askSession({title:'Delete this conversation?',text:'Remove the current conversation from this project. Saved copies remain until you save the project again; provider-side records are unchanged.',confirm:'Delete conversation',discard:false}))return;storageSet(chatKey(chatProvider()),[]);storageSet(draftKey(chatProvider()),'');$('chatInput').value='';markResearchDirty();refreshChat();});
+let chatRun=null;
+function chatBusyForSession(){return Boolean(chatRun?.sid===state.activeSessionId||state.remoteChatBusy);}
+async function sendChatRequest(){
+  const sid=state.activeSessionId,p=chatProvider(),model=$('chatModelSelect').value,text=$('chatInput').value.trim();if(!sid||!text)return;
+  if(chatRun){if(chatRun.sid===sid&&chatRun.provider===p){chatRun.controller.abort();return;}throw new Error('A response is running in another project. Wait for it to finish.');}
+  if(!model)throw new Error('Choose a chat model first.');if(!state.config.keys[p==='openai'?'OPENAI_API_KEY':'XAI_API_KEY'])return showSettings();
+  const history=storageGet(chatKey(p,sid),[]);if(history.length>=38)throw new Error('Start a new conversation to stay within the POC message limit.');history.push({role:'user',content:text});storageSet(chatKey(p,sid),history);storageSet(draftKey(p,sid),'');$('chatInput').value='';
+  const run={sid,provider:p,full:'',controller:new AbortController()};chatRun=run;state.chatBusy=true;markResearchDirty(sid);refreshChat();publishDesk({type:'chat-busy',sid,provider:p,busy:true});
+  let waiting=null;if(sid===state.activeSessionId){waiting=document.createElement('div');waiting.className='thinking-indicator';waiting.innerHTML='<i></i><i></i><i></i><span>Waiting for response…</span>';$('chatMessages').append(waiting);}
   try{
-    const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-CSRF':state.csrf},body:JSON.stringify({provider:p,messages:chats[p]}),signal:state.chatAbort.signal});
-    if(!response.ok){const d=await response.json();throw new Error(d.error||'Chat failed.');}
+    const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-CSRF':state.csrf},body:JSON.stringify({provider:p,model,messages:history}),signal:run.controller.signal});if(!response.ok){const d=await response.json();throw new Error(d.error||'Chat failed.');}
     const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
     for(;;){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});let end;
       while((end=buffer.indexOf('\n\n'))>=0){const block=buffer.slice(0,end);buffer=buffer.slice(end+2);const type=block.match(/^event: (.*)$/m)?.[1],raw=block.match(/^data: (.*)$/m)?.[1];if(!raw)continue;const d=JSON.parse(raw);
-        if(type==='status')waiting.querySelector('span').textContent=d.message;
-        if(type==='delta'){waiting.remove();if(!responseNode)responseNode=addMessage('assistant','');full+=d.text;responseNode.querySelector('.message-text').textContent=full;$('chatMessages').scrollTop=$('chatMessages').scrollHeight;}
+        if(type==='status'&&waiting?.isConnected)waiting.querySelector('span').textContent=d.message;
+        if(type==='delta'){waiting?.remove();run.full+=d.text;publishDesk({type:'chat-preview',sid,provider:p,text:run.full});if(sid===state.activeSessionId&&p===chatProvider()){let node=$('activeChatResponse');if(!node){node=addMessage('assistant','',p);node.id='activeChatResponse';}node.querySelector('.message-text').textContent=run.full;$('chatMessages').scrollTop=$('chatMessages').scrollHeight;}}
         if(type==='error')throw new Error(d.message);
       }
     }
-    if(full){chats[p].push({role:'assistant',content:full});storageSet('tr-lab-chat-'+p,chats[p]);attachActions(responseNode,full);}
-  }catch(e){toast(e.name==='AbortError'?'Response stopped. Provider work already performed may still be billed.':e.message,true);if(full&&responseNode){const note=document.createElement('small');note.textContent='\n[Partial response — not saved to conversation]';responseNode.append(note);}}
-  finally{waiting.remove();state.chatBusy=false;state.chatAbort=null;$('chatProvider').disabled=false;$('sendChat').innerHTML=icon('send');$('sendChat').setAttribute('aria-label','Send chat message');$('chatStatus').textContent='LOCAL CONVERSATION';}
-});
+    if(run.full){history.push({role:'assistant',content:run.full});if(readDoc(sid)){storageSet(chatKey(p,sid),history);markResearchDirty(sid);}}
+  }catch(e){toast(e.name==='AbortError'?'Response stopped. Provider work already performed may still be billed.':e.message,true);}
+  finally{waiting?.remove();chatRun=null;state.chatBusy=false;publishDesk({type:'chat-busy',sid,provider:p,busy:false});if(sid===state.activeSessionId)refreshChat();renderTabs();}
+}
+on('sendChat','click',async()=>{if(chatRun?.sid===state.activeSessionId&&chatRun.provider===chatProvider()){chatRun.controller.abort();return;}if(state.remoteChatBusy)throw new Error('A response is running in the other research window.');if(navigator.locks)await navigator.locks.request('tr-lab-chat:'+state.activeSessionId+':'+chatProvider(),{ifAvailable:true},async lock=>{if(!lock)throw new Error('This project conversation is in use in another window.');await sendChatRequest();});else await sendChatRequest();});
+on('chatInput','input',()=>{storageSet(draftKey(chatProvider()),$('chatInput').value);markResearchDirty();});
 on('chatInput','keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('sendChat').click();}});
+
 // Modal-native focus and Escape handling; click on the backdrop closes only dialogs.
 for(const d of document.querySelectorAll('dialog'))d.addEventListener('click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}});
+// POC 0.2: model catalogs, session lifecycle, layout and shared research views.
+function cfgModel(provider,kind){return state.config?.models[provider==='openai'?(kind==='image'?'openaiImage':'openaiChat'):(kind==='image'?'xaiImage':'xaiChat')]||'';}
+function modelKey(provider,kind){return provider+':'+kind;}
+const modelLoads=new Map();
+async function fetchModelChoices(provider,kind,refresh=false){
+  const key=modelKey(provider,kind);
+  if(!refresh&&state.modelChoices[key])return state.modelChoices[key];
+  if(modelLoads.has(key))return modelLoads.get(key);
+  const task=api('/api/provider-models?provider='+provider+'&kind='+kind+(refresh?'&refresh=1':'')).then(data=>{state.modelChoices[key]=data;return data;});
+  modelLoads.set(key,task);try{return await task;}finally{modelLoads.delete(key);}
+}
+function populateModels(select,provider,kind,data,preferred,remember=true){
+  const key=modelKey(provider,kind),ids=data.items.map(m=>m.id);
+  const wanted=preferred||state.chosen[key]||cfgModel(provider,kind),chosen=ids.includes(wanted)?wanted:ids[0]||'';
+  select.innerHTML=ids.length?data.items.map(m=>`<option value="${esc(m.id)}">${esc(m.label||m.id)}</option>`).join(''):'<option value="">No compatible models returned</option>';
+  select.value=chosen;if(remember){state.chosen[key]=chosen;storageSet('tr-lab-model-choices',state.chosen);}
+}
+async function loadModelPicker(selectId,noteId,provider,kind,refresh=false){
+  const sid=state.activeSessionId;const select=$(selectId),note=$(noteId),ticket=crypto.randomUUID();select.dataset.ticket=ticket;
+  select.disabled=true;select.innerHTML='<option value="">Loading models…</option>';note.textContent='Loading models from '+(provider==='openai'?'OpenAI':'Grok')+'…';
+  if(!state.config.keys[provider==='openai'?'OPENAI_API_KEY':'XAI_API_KEY']){select.innerHTML='<option value="">Connect provider first</option>';note.textContent='Save your API key in Connections. Models will load automatically.';return;}
+  try{const data=await fetchModelChoices(provider,kind,refresh);if(select.dataset.ticket!==ticket||sid!==state.activeSessionId)return;populateModels(select,provider,kind,data);select.disabled=!data.items.length;note.textContent=`${data.items.length} ${kind} models · ${data.source==='live'?'Listed by provider':data.source==='stale'?'Cached · refresh failed':'Cached provider list'}`+(data.warning?' · '+data.warning:'');}
+  catch(e){if(select.dataset.ticket!==ticket||sid!==state.activeSessionId)return;const configured=state.chosen[modelKey(provider,kind)]||cfgModel(provider,kind);select.innerHTML=configured?`<option value="${esc(configured)}">${esc(configured)} · saved setting</option>`:'<option value="">Model list unavailable</option>';select.disabled=!configured;note.textContent=e.message+(configured?' Showing saved setting, not a verified catalog choice.':'');}
+  finally{if(kind==='chat'&&sid===state.activeSessionId){const r=storageGet('tr-lab-v3-research:'+sid,{});r.models={...r.models,[provider]:select.value};storageSet('tr-lab-v3-research:'+sid,r);refreshChatCaption();}}
+}
+function loadImageModels(refresh=false){return loadModelPicker('imageModelSelect','imageModelsNote',state.provider,'image',refresh);}
+function loadChatModels(refresh=false){return loadModelPicker('chatModelSelect','chatModelsNote',chatProvider(),'chat',refresh);}
+on('refreshImageModels','click',()=>loadImageModels(true));on('refreshChatModels','click',()=>loadChatModels(true));
+on('imageModelSelect','change',()=>{state.chosen[modelKey(state.provider,'image')]=$('imageModelSelect').value;storageSet('tr-lab-model-choices',state.chosen);});
+on('chatModelSelect','change',()=>{state.chosen[modelKey(chatProvider(),'chat')]=$('chatModelSelect').value;storageSet('tr-lab-model-choices',state.chosen);refreshChatCaption();});
+async function refreshSettingsModels(refresh=false){
+  const specs=[['openai','image','OPENAI_IMAGE_MODEL'],['openai','chat','OPENAI_CHAT_MODEL'],['xai','image','XAI_IMAGE_MODEL'],['xai','chat','XAI_CHAT_MODEL']];
+  await Promise.all(specs.map(async([provider,kind,name])=>{const el=$('cfg_'+name);if(!el)return;if(!state.config.keys[provider==='openai'?'OPENAI_API_KEY':'XAI_API_KEY'])return;try{const data=await fetchModelChoices(provider,kind,refresh);populateModels(el,provider,kind,data,cfgModel(provider,kind),false);}catch(e){el.title=e.message;}}));
+}
+on('refreshAllModels','click',()=>refreshSettingsModels(true));
+
+const initialThumb=thumbSettings();
+
+function setupBrand(){
+  $('brandMark').classList.toggle('has-motif',Boolean(state.config.brand?.logo));
+  if(state.config.brand?.logo){$('brandMark').innerHTML='<img src="/brand-assets/labs0.svg" alt="">';const favicon=document.querySelector('link[rel="icon"]');if(favicon)favicon.href='/brand-assets/labs0.svg';}
+  else $('brandMark').title='Logo asset not found: assets/logos/labs0.svg. Check Connections → Local brand assets.';
+  if(state.config.fonts.includes('display'))document.documentElement.classList.add('brand-font-ready');
+}
+function showBrandStatus(){
+  let node=$('brandStatus');if(!node){node=document.createElement('div');node.id='brandStatus';node.className='brand-status soft-note';$('settingsDialog').querySelector('.dialog-actions').before(node);}
+  node.innerHTML='<strong>Local brand assets</strong><p>'+esc(state.config.brand?.logoSource?'Motif: '+state.config.brand.logoSource:'labs0.svg not found — add it to the Lab assets/logos folder and restart.')+'</p><p>'+esc(state.config.brand?.fonts?.display?'Title font: '+state.config.brand.fonts.display:'American Captain.ttf/.otf not found — the fallback is currently in use.')+'</p><small>Read-only lookup: poc/assets → Lab/assets → sibling ThirdRailify/assets → Admin/assets. No font files are included in the update.</small>';
+}
+function closeAccount(){$('accountMenu').hidden=true;$('accountTrigger').setAttribute('aria-expanded','false');}
+on('accountTrigger','click',()=>{const open=$('accountMenu').hidden;$('accountMenu').hidden=!open;$('accountTrigger').setAttribute('aria-expanded',String(open));});
+on('accountConnections','click',()=>{closeAccount();showSettings();});on('accountLibrary','click',()=>{closeAccount();showLibrary();});on('loginScaffold','click',()=>{closeAccount();$('loginDialog').showModal();});
+document.addEventListener('pointerdown',e=>{if(!$('accountWidget').contains(e.target))closeAccount();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('accountMenu').hidden){closeAccount();$('accountTrigger').focus();}});
+on('accountMenu','keydown',e=>{const items=[...$('accountMenu').querySelectorAll('[role="menuitem"]')];const at=items.indexOf(document.activeElement);let index;if(e.key==='ArrowDown')index=(at+1)%items.length;if(e.key==='ArrowUp')index=(at-1+items.length)%items.length;if(e.key==='Home')index=0;if(e.key==='End')index=items.length-1;if(index!==undefined){e.preventDefault();items[index].focus();}});
+on('accountTrigger','keydown',e=>{if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();$('accountMenu').hidden=false;$('accountTrigger').setAttribute('aria-expanded','true');const items=$('accountMenu').querySelectorAll('[role="menuitem"]');items[e.key==='ArrowDown'?0:items.length-1].focus();}});
+
+function researchMax(){return innerWidth>1000?Math.max(280,innerWidth-parseFloat(getComputedStyle($('appShell')).getPropertyValue('--tools'))-($('appShell').classList.contains('left-collapsed')?0:leftWidth())-340-10):Math.max(280,innerWidth-56);}
+function setResearchWidth(value,persist=true){const max=researchMax(),width=Math.max(280,Math.min(max,Number(value)||330));document.documentElement.style.setProperty('--research',width+'px');$('resizeHandle').setAttribute('aria-valuenow',String(width));$('resizeHandle').setAttribute('aria-valuemax',String(max));if(persist)storageSet('tr-lab-sidebar',width);}
+function setupLayout(){
+  $('appShell').classList.toggle('left-collapsed',storageGet('tr-lab-left-collapsed',false));updateLeftButton();setLeftWidth(storageGet('tr-lab-left-width',285),false);setRailMode(storageGet('tr-lab-rail-mode','pinned'),false);
+  $('chatModelPanel').open=!storageGet('tr-lab-chat-model-collapsed',false);
+  if(state.researchOnly){document.body.classList.add('research-only');$('collapseResearch').hidden=true;$('popoutResearch').hidden=true;$('researchTabLink').hidden=true;$('dockResearch').hidden=false;$('toggleResearch').hidden=true;document.title='Research Desk | Third Railify Lab';researchTab(new URL(location.href).searchParams.get('tab')==='images'?'images':'chat');}
+  else if(innerWidth<=1000){$('appShell').classList.add('research-closed');}
+}
+function updateLeftButton(){const collapsed=$('appShell').classList.contains('left-collapsed');$('collapseLeft').setAttribute('aria-expanded',String(!collapsed));$('collapseLeft').setAttribute('aria-label',collapsed?'Expand left sidebar':'Collapse left sidebar to icons');$('collapseLeft').title=collapsed?'Expand controls':'Collapse controls to icon rail';}
+on('collapseLeft','click',()=>{const collapsed=$('appShell').classList.toggle('left-collapsed');storageSet('tr-lab-left-collapsed',collapsed);updateLeftButton();resizePanels();});
+window.addEventListener('resize',()=>resizePanels());
+
+
+
+// Project documents: recovery copies stay in this browser; explicit Save writes the
+// complete Studio + Research document to the existing .data project ledger.
+const WORKSPACE_KEY='tr-lab-v3-workspace',DOC_PREFIX='tr-lab-v3-doc:';
+const presetDefaults={original:'',cinematic:'Cinematic lighting, deliberate composition, premium editorial finish.',thumbnail:'Editorial thumbnail composition, strong contrast, clean focal point, room for a headline. No text.',railify:'Dark near-black background, restrained metallic gold and warm ivory accents, elegant electric atmosphere. No text.'};
+function presets(){return {...presetDefaults,...state.preferences?.presets};}
+function workspaceIndex(){return storageGet(WORKSPACE_KEY,{ids:[],activeId:null});}
+function readDoc(id){return id?storageGet(DOC_PREFIX+id,null):null;}
+function writeDoc(doc){storageSet(DOC_PREFIX+doc.id,doc);}
+function openDocs(){return workspaceIndex().ids.map(readDoc).filter(Boolean);}
+function docResearch(id){return {provider:storageGet('tr-lab-v3-research:'+id,{provider:'openai'}).provider||'openai',models:storageGet('tr-lab-v3-research:'+id,{}).models||{},drafts:{openai:storageGet(draftKey('openai',id),''),xai:storageGet(draftKey('xai',id),'')},chats:{openai:storageGet(chatKey('openai',id),[]),xai:storageGet(chatKey('xai',id),[])},history:storageGet('tr-lab-v3-history:'+id,[])};}
+function restoreResearch(id,r={}){storageSet('tr-lab-v3-research:'+id,{provider:r.provider||'openai',models:r.models||{}});for(const p of ['openai','xai']){storageSet(chatKey(p,id),r.chats?.[p]||[]);storageSet(draftKey(p,id),r.drafts?.[p]||'');}storageSet('tr-lab-v3-history:'+id,r.history||[]);}
+function markResearchDirty(id=state.activeSessionId){const d=readDoc(id);if(!d)return;d.dirty=true;d.updatedAt=new Date().toISOString();writeDoc(d);renderTabs();}
+function saveResearchPrefs(){if(!state.activeSessionId)return;const r=storageGet('tr-lab-v3-research:'+state.activeSessionId,{});r.provider=chatProvider();r.models={...r.models,[chatProvider()]:$('chatModelSelect').value};storageSet('tr-lab-v3-research:'+state.activeSessionId,r);markResearchDirty();}
+function defaultDoc(){return {id:crypto.randomUUID(),name:'Untitled project',saved:false,dirty:false,version:3,mode:'generate',assetId:null,settings:{...initialThumb},generation:{provider:'replicate',modelId:'black-forest-labs/flux-schnell',prompt:'',style:'',presetId:'original',input:{},paramValues:{},fileInputs:{},advanced:'',options:{}},currentJob:null};}
+function captureSession(dirty=true){
+  if(state.restoring||state.researchOnly||!state.activeSessionId)return;
+  const old=readDoc(state.activeSessionId);if(!old)return;
+  rememberInputs();let input={};try{input=state.provider==='replicate'&&state.model?collectInputs():{};}catch{input=old.generation?.input||{};}
+  const model=state.model?Object.fromEntries(Object.entries(state.model).filter(([k])=>k!=='rawSchema')):null;
+  const next={...old,version:3,mode:state.mode,assetId:state.selected?.id||null,settings:thumbSettings(),currentJob:state.currentJob,dirty:old.dirty||dirty,generation:{provider:state.provider,modelId:state.modelId,model,selectedModel:$('imageModelSelect').value,prompt:$('prompt').value,style:state.style,presetId:state.presetId||'original',input,paramValues:{...state.paramValues},fileInputs:{...state.fileInputs},advanced:$('advancedJson').value,options:{size:$('directSize')?.value,quality:$('directQuality')?.value,aspect_ratio:$('directRatio')?.value}}};
+  if(next.name==='Untitled project'&&next.generation.prompt.trim())next.name=next.generation.prompt.trim().split('\n')[0].slice(0,55);
+  writeDoc(next);updateSessionLabel();
+}
+function updateSessionLabel(){const d=readDoc(state.activeSessionId);$('sessionName').textContent=d?.name||'Workspace library';$('sessionState').textContent=d?.dirty?'UNSAVED CHANGES':d?.saved?'SAVED PROJECT':'NEW PROJECT';renderTabs();}
+function renderTabs(){
+  const all=openDocs(),docs=state.researchOnly?all.filter(d=>d.id===state.activeSessionId):all;
+  $('documentTabs').innerHTML=docs.length?docs.map(d=>`<div class="document-tab ${d.id===state.activeSessionId?'active':''}" data-doc="${d.id}"><button role="tab" class="tab-select" aria-selected="${d.id===state.activeSessionId}" tabindex="${d.id===state.activeSessionId?'0':'-1'}" data-open-doc="${d.id}" title="${esc(d.name)} · double-click to rename">${icon(d.mode==='thumbnail'?'layers':'document')}<span class="tab-title">${esc(d.name)}</span><span class="tab-dirty" aria-label="${d.dirty?'Unsaved changes':''}">${d.dirty?'•':''}</span></button><button class="tab-close" data-close-doc="${d.id}" title="Close ${esc(d.name)}" aria-label="Close ${esc(d.name)}">${icon('close')}</button></div>`).join(''):'<span class="tabs-empty">NO OPEN PROJECTS</span>';
+  $('documentTabs').querySelectorAll('[data-open-doc]').forEach(b=>{b.onclick=()=>switchSession(b.dataset.openDoc).catch(e=>toast(e.message,true));b.ondblclick=()=>renameSession(b.dataset.openDoc);b.onkeydown=e=>{const ids=docs.map(d=>d.id),i=ids.indexOf(b.dataset.openDoc);let n;if(e.key==='ArrowRight')n=(i+1)%ids.length;if(e.key==='ArrowLeft')n=(i+ids.length-1)%ids.length;if(e.key==='Home')n=0;if(e.key==='End')n=ids.length-1;if(n!==undefined){e.preventDefault();switchSession(ids[n]).then(()=>$('documentTabs').querySelector(`[data-open-doc="${ids[n]}"]`)?.focus());}};});
+  $('documentTabs').querySelectorAll('[data-close-doc]').forEach(b=>b.onclick=()=>closeSession(b.dataset.closeDoc).catch(e=>toast(e.message,true)));
+  for(const id of ['saveSession','saveProject','chatHistory','deleteChat','newChat'])$(id).disabled=!state.activeSessionId;
+  document.querySelectorAll('.rail-button[data-mode]').forEach(b=>b.disabled=!state.activeSessionId);
+}
+async function initWorkspace(){
+  let index=storageGet(WORKSPACE_KEY,null);
+  if(!index){const doc=defaultDoc();const oldPrompt=storageGet('tr-lab-prompt','');doc.generation.prompt=oldPrompt;if(oldPrompt)doc.name=oldPrompt.split('\n')[0].slice(0,55);doc.dirty=Boolean(oldPrompt);
+    const legacyChat={openai:storageGet('tr-lab-chat-openai',[]),xai:storageGet('tr-lab-chat-xai',[])};restoreResearch(doc.id,{chats:legacyChat,drafts:{openai:storageGet('tr-lab-chat-draft-openai',''),xai:storageGet('tr-lab-chat-draft-xai','')},provider:storageGet('tr-lab-chat-provider','openai')});
+    if(!storageGet('tr-lab-work-reset',false)&&state.assets[0])doc.assetId=state.assets[0].id;writeDoc(doc);index={ids:[doc.id],activeId:doc.id};storageSet(WORKSPACE_KEY,index);
+  }
+  if(state.researchOnly){const wanted=new URL(location.href).searchParams.get('session')||index.activeId;if(readDoc(wanted))await switchSession(wanted,false);else{state.activeSessionId=null;refreshChat();renderTabs();toast('This project is no longer open. Return to the main Library to reopen saved work.');}return;}
+  if(index.ids.length){const id=index.ids.includes(index.activeId)?index.activeId:index.ids[0];await switchSession(id,false);}else{state.activeSessionId=null;await showLibrary();renderTabs();refreshChat();}
+}
+async function newSession(){captureSession(false);const doc=defaultDoc();writeDoc(doc);restoreResearch(doc.id);const idx=workspaceIndex();idx.ids.push(doc.id);idx.activeId=doc.id;storageSet(WORKSPACE_KEY,idx);await switchSession(doc.id,false);return doc.id;}
+async function switchSession(id,capture=true){
+  if(capture)captureSession(false);const token=++sessionSwitchToken;const d=readDoc(id);if(!d)return showLibrary();state.restoring=true;state.loadTicket++;state.activeSessionId=id;state.projectId=d.saved?id:null;state.remoteChatBusy=false;
+  if(!state.researchOnly){const idx=workspaceIndex();idx.activeId=id;storageSet(WORKSPACE_KEY,idx);}
+  try{
+    const g=d.generation||{};state.provider=g.provider||'replicate';state.modelId=g.modelId||'black-forest-labs/flux-schnell';state.model=g.model||null;state.style=g.style||'';state.presetId=g.presetId||'original';state.paramValues={...g.paramValues};state.fileInputs={...g.fileInputs};state.currentJob=d.currentJob||null;state.selected=null;state.image=null;
+    $('prompt').value=g.prompt||'';$('advancedJson').value=g.advanced??(g.input?JSON.stringify(g.input,null,2):'');
+    document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('active',b.dataset.provider===state.provider));$('replicateModelSection').hidden=state.provider!=='replicate';$('directModelSection').hidden=state.provider==='replicate';$('advancedSection').hidden=state.provider!=='replicate';
+    if(state.provider==='replicate'){renderParameters();$('modelName').textContent=state.model?.name||state.modelId.split('/').pop();$('modelOwner').textContent=state.modelId.split('/')[0];$('schemaStatus').textContent=state.model?'Saved model schema · refresh to update':'Load model controls to continue';}
+    else{if(g.selectedModel)state.chosen[modelKey(state.provider,'image')]=g.selectedModel;updateDirectControls();for(const [key,val] of Object.entries(g.options||{})){const el=$({size:'directSize',quality:'directQuality',aspect_ratio:'directRatio'}[key]);if(el&&val)el.value=val;}}
+    const r=storageGet('tr-lab-v3-research:'+id,{provider:'openai'});$('chatProvider').value=r.provider||'openai';if(r.models?.[chatProvider()])state.chosen[modelKey(chatProvider(),'chat')]=r.models[chatProvider()];$('chatInput').value=storageGet(draftKey(chatProvider(),id),'');refreshChat();loadChatModels().catch(()=>{});
+    setMode(d.mode||'generate');applySettings(d.settings||initialThumb);updatePresetDisplay();renderModelInfo();error('');
+    if(d.assetId){const a=state.assets.find(a=>a.id===d.assetId);if(a)await selectAsset(a);else toast('The saved image is missing; the project settings are intact.',true);}
+    if(state.activeSessionId!==id)return;
+    if(!d.assetId){$('resultImage').removeAttribute('src');$('useThumbnail').disabled=true;$('downloadOriginal').disabled=true;}
+    renderStage();updateSessionLabel();
+    if(state.researchOnly){const url=new URL(location.href);url.searchParams.set('session',id);history.replaceState({},'',url);}
+  }finally{if(token===sessionSwitchToken)state.restoring=false;}
+  if(state.activeSessionId===id&&state.provider==='replicate'&&!state.model&&state.config.keys.REPLICATE_API_TOKEN&&!state.researchOnly)loadModel(state.modelId).catch(e=>toast(e.message,true));
+}
+function resetCanvas(){state.image=null;state.selected=null;state.currentJob=null;$('resultImage').removeAttribute('src');$('useThumbnail').disabled=true;$('downloadOriginal').disabled=true;renderStage();renderHistory();}
+let pendingSessionDialog=null;
+function askSession({title,text,confirm='Save',discard=false,name=null}){
+  if(pendingSessionDialog)return Promise.resolve(null);
+  $('sessionDialogTitle').textContent=title;$('sessionDialogText').textContent=text;$('sessionConfirm').textContent=confirm;$('sessionDiscard').hidden=!discard;$('sessionNameField').hidden=name===null;$('sessionNameInput').value=name||'';
+  $('sessionDialog').showModal();if(name!==null)setTimeout(()=>$('sessionNameInput').select(),40);
+  return new Promise(resolve=>{pendingSessionDialog=resolve;});
+}
+function resolveSessionDialog(value){const resolve=pendingSessionDialog;pendingSessionDialog=null;$('sessionDialog').close();resolve?.(value);}
+on('sessionConfirm','click',()=>{if(!$('sessionNameField').hidden&&!$('sessionNameInput').value.trim())return $('sessionNameInput').focus();resolveSessionDialog({action:'confirm',name:$('sessionNameInput').value.trim()});});
+on('sessionDiscard','click',()=>resolveSessionDialog({action:'discard'}));on('sessionCancel','click',()=>resolveSessionDialog(null));$('sessionDialog').addEventListener('close',()=>{if(pendingSessionDialog){const r=pendingSessionDialog;pendingSessionDialog=null;r(null);}});on('sessionNameInput','keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('sessionConfirm').click();}});
+async function renameSession(id){const d=readDoc(id);if(!d)return;const r=await askSession({title:'Name this project',text:'The Studio and Research Desk share this title.',name:d.name});if(!r)return;d.name=r.name;d.dirty=true;writeDoc(d);updateSessionLabel();}
+async function saveDoc(id,name){
+  const doc=readDoc(id);if(!doc)throw new Error('This project was closed.');
+  if(chatRun?.sid===id)throw new Error('Finish or stop the response before saving its conversation.');
+  const {saved,dirty,currentJob,...project}=doc;project.research=docResearch(id);project.version=3;
+  const result=await api('/api/projects',{method:'POST',body:{id,name:name||doc.name,project}});state.projects=state.projects.filter(p=>p.id!==id);state.projects.push(result.project);const latest=readDoc(id);if(latest){const {saved:_s,dirty:_d,currentJob:_j,...current}=latest;current.research=docResearch(id);current.version=3;latest.name=result.project.name;latest.saved=true;latest.dirty=JSON.stringify(current)!==JSON.stringify(project);writeDoc(latest);}if(id===state.activeSessionId){state.projectId=id;updateSessionLabel();}return true;
+}
+async function saveSession(){
+  if(!state.activeSessionId)return;captureSession(false);const id=state.activeSessionId,d=readDoc(id);const r=await askSession({title:'Save project & research',text:'Save this Studio setup, image references, thumbnail, and both provider conversations together on disk.',name:d.name});if(!r)return;await saveDoc(id,r.name);toast('Project and research saved in .data.');
+}
+async function closeSession(id){
+  if(id===state.activeSessionId)captureSession(false);const d=readDoc(id);if(!d)return;
+  if(chatRun?.sid===id||id===state.activeSessionId&&state.remoteChatBusy)throw new Error('Finish or stop the active chat response before closing this project.');
+  const running=state.jobs.some(j=>j.sessionId===id&&activeStatus(j.status));
+  const r=await askSession({title:'Close '+d.name+'?',text:(d.dirty?'This project has unsaved changes. ':d.saved?'The saved project remains in Library. ':'This new project is not saved. ')+(running?'Submitted generation continues and its output remains in Library. ':'')+'Closing is not the same as deleting a saved project.',confirm:d.dirty||!d.saved?'Save & close':'Close project',discard:d.dirty||!d.saved});if(!r)return;
+  if(r.action==='confirm'&&(d.dirty||!d.saved))await saveDoc(id,d.name);
+  const idx=workspaceIndex();idx.ids=idx.ids.filter(x=>x!==id);if(idx.activeId===id)idx.activeId=idx.ids.at(-1)||null;storageSet(WORKSPACE_KEY,idx);localStorage.removeItem(DOC_PREFIX+id);
+  for(const p of ['openai','xai']){localStorage.removeItem(chatKey(p,id));localStorage.removeItem(draftKey(p,id));}localStorage.removeItem('tr-lab-v3-history:'+id);localStorage.removeItem('tr-lab-v3-research:'+id);publishDesk({type:'closed',sid:id});
+  if(id===state.activeSessionId){state.activeSessionId=null;state.projectId=null;if(state.researchOnly){refreshChat();renderTabs();}else if(idx.activeId)await switchSession(idx.activeId,false);else{resetCanvas();await showLibrary();refreshChat();updateSessionLabel();}}
+  renderTabs();
+}
+async function discardSession(){return newSession();}
+async function openSession(id){
+  if(readDoc(id)){await switchSession(id);return;}
+  const p=state.projects.find(p=>p.id===id);if(!p)throw new Error('Saved session not found. Refresh Library.');
+  const old=p.project||{},doc={...defaultDoc(),...old,id,name:p.name,saved:true,dirty:false,currentJob:null};
+  if(!old.generation)doc.mode='thumbnail';writeDoc(doc);restoreResearch(id,old.research||{});const idx=workspaceIndex();if(!idx.ids.includes(id))idx.ids.push(id);storageSet(WORKSPACE_KEY,idx);await switchSession(id);
+}
+function showShellPage(page){state.page=page;$('appShell').classList.add('shell-mode');$('libraryPage').hidden=page!=='library';$('workspaceSettingsPage').hidden=page!=='settings';$('modeLabel').textContent=page==='library'?'Workspace library':'Settings';document.querySelectorAll('[data-mode]').forEach(b=>b.classList.remove('active'));$('libraryButton').classList.toggle('active',page==='library');$('settingsPageButton').classList.toggle('active',page==='settings');renderTabs();}
+on('libraryNew','click',newSession);on('libraryRefresh','click',showLibrary);on('librarySearch','input',renderLibrary);
+on('settingsPageButton','click',()=>{captureSession(false);showShellPage('settings');renderWorkspaceSettings();});
+function renderWorkspaceSettings(){$('settingsRailMode').value=storageGet('tr-lab-rail-mode','pinned');$('settingsModelCollapsed').checked=!$('chatModelPanel').open;$('settingsProviderStatus').innerHTML=[['replicate','REPLICATE_API_TOKEN'],['GPT / OpenAI','OPENAI_API_KEY'],['Grok','XAI_API_KEY']].map(([n,k])=>`<span>${esc(n)} · ${state.config.keys[k]?'Key saved':'Not connected'}</span>`).join('');}
+on('settingsConnections','click',showSettings);on('settingsPresets','click',openPresetEditor);on('editPresets','click',openPresetEditor);on('settingsResetPanels','click',resetPanelWidths);
+on('settingsRailMode','change',()=>setRailMode($('settingsRailMode').value));on('settingsModelCollapsed','change',()=>{$('chatModelPanel').open=!$('settingsModelCollapsed').checked;});
+let presetDraft=null;
+function openPresetEditor(){presetDraft={...presets()};$('presetChoice').value=state.presetId||'original';$('presetInstructions').value=presetDraft[$('presetChoice').value];$('presetDialog').showModal();}
+on('presetInstructions','input',()=>{presetDraft[$('presetChoice').value]=$('presetInstructions').value;});on('presetChoice','change',()=>{$('presetInstructions').value=presetDraft[$('presetChoice').value]||'';});on('resetPreset','click',()=>{presetDraft[$('presetChoice').value]=presetDefaults[$('presetChoice').value];$('presetInstructions').value=presetDraft[$('presetChoice').value];});
+on('savePresets','click',async()=>{const r=await api('/api/preferences',{method:'POST',body:{presets:presetDraft}});state.preferences=r.preferences;state.style=presets()[state.presetId||'original'];updatePresetDisplay();captureSession();$('presetDialog').close();toast('Prompt presets saved locally.');});
+function updatePresetDisplay(){document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===(state.presetId||'original')));$('promptDirection').textContent=state.style?'Added direction: '+state.style:'Your prompt. No added art direction.';}
+function renderWorkflow(){
+  const w=state.provider==='replicate'?workflowFor(state.model):{hasPrompt:true,promptRequired:true,imageKeys:[]};
+  const known=state.provider!=='replicate'||Boolean(state.model),inputOnly=known&&!w.hasPrompt;document.body.classList.toggle('input-workflow',inputOnly&&state.mode==='generate');
+  $('modelContext').hidden=!inputOnly||state.mode!=='generate';$('noPromptNotice').hidden=!inputOnly;$('prompt').hidden=inputOnly;$('directionSection').hidden=inputOnly;
+  const promptLabel=$('promptCard').querySelector('.section-label');if(promptLabel)promptLabel.innerHTML=icon(inputOnly?'image':'sparkles')+(inputOnly?' RUN THIS MODEL':' THE BRIEF');
+  $('prompt').placeholder=w.promptRequired?'Describe the image you want to create…':'Optional prompt · use the model default or enter your own';
+  if(inputOnly){$('contextTitle').textContent=(state.model?.name||'Model')+' · input workspace';$('contextDescription').textContent=state.model?.description||'Supply the required inputs in the left panel, then run this model. No text prompt is required.';$('noPromptNotice').textContent='This model does not accept a text prompt. Generate uses the model inputs in the left panel.';
+    $('contextInputs').innerHTML=w.imageKeys.map(k=>{const images=fieldImages(k);return `<div class="context-tile"><strong>${esc(state.model.schema.properties[k].title||k)}</strong>${images.length?`<img src="${esc(images[0])}" alt="${esc(k)} selected input" referrerpolicy="no-referrer"><small>Input supplied</small>`:`<div class="context-empty">${(state.model.schema.required||[]).includes(k)?'Required image':'Optional image'}</div>`}</div>`;}).join('');$('contextInputs').querySelectorAll('img').forEach(i=>i.onerror=()=>{i.hidden=true;});
+    $('emptyStage').querySelector('h2').innerHTML='YOUR RESULT.<br><span>RIGHT HERE.</span>';$('emptyStage').querySelector('p').textContent='Prepare the model inputs, then generate. Your original result will appear here.';
+  }else{$('emptyStage').querySelector('h2').innerHTML='A BLANK CANVAS.<br><span>ENDLESS DIRECTIONS.</span>';$('emptyStage').querySelector('p').textContent='Write a prompt. Choose your model. Give your next idea somewhere to land.';}
+  let missing=[];if(state.provider==='replicate'&&state.model)try{const input=preparePrompt(collectInputs(),state.model,w.hasPrompt?$('prompt').value:undefined);missing=missingInputs(input,state.model.schema);}catch{}
+  $('generate').innerHTML=icon(inputOnly?'arrow':'sparkles')+(inputOnly?'Run model':'Generate')+' '+icon('arrow');$('generate').disabled=!state.activeSessionId||state.inputBusy>0||pendingGenerations.has(state.activeSessionId);$('contextRun').disabled=$('generate').disabled;
+  $('generate').title=state.inputBusy?'Saving input images…':missing.length?'Required: '+missing.join(', '):'Submit generation once';
+}
+on('advancedJson','input',()=>{captureSession();renderWorkflow();});
+function renderModelInfo(){
+  const m=state.model;$('modelCode').textContent=m?.id||state.modelId;const owner=m?.owner||m?.id?.split('/')[0]||'R';
+  $('modelChipAvatar').innerHTML=safeImageUrl(m?.ownerAvatarUrl)?`<img src="${esc(m.ownerAvatarUrl)}" alt="" referrerpolicy="no-referrer">`:esc(owner.slice(0,1).toUpperCase());
+  $('modelInfoPanel').innerHTML=m?`${safeImageUrl(m.coverImageUrl)?`<img src="${esc(m.coverImageUrl)}" alt="Model example" referrerpolicy="no-referrer">`:''}<span class="eyebrow">REPLICATE / MODEL DETAILS</span><h3>${esc(m.name)}</h3><span class="micro">${esc(m.id)}</span><p>${esc(m.description)}</p><dl><dt>Runs</dt><dd>${m.runCount==null?'Not reported':Number(m.runCount).toLocaleString('en-US')}</dd><dt>Version</dt><dd>${esc(m.version?.slice(0,16)||'Not reported')}</dd><dt>Updated</dt><dd>${m.updatedAt?esc(new Date(m.updatedAt).toLocaleDateString('en-US')):'Not reported'}</dd><dt>Workflow</dt><dd>${workflowFor(m).hasPrompt?'Prompt-capable':'Input-based · no prompt'}</dd></dl><div class="model-links">${[['Provider',m.url],['License',m.licenseUrl],['Source',m.githubUrl],['Paper',m.paperUrl]].filter(([,url])=>safeImageUrl(url)).map(([label,url])=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`).join('')}</div><p class="helper">Pricing, hardware, and warm-state availability are not inferred. Check the provider page.</p>`:'<p>Load this model to see its current schema and metadata.</p>';
+  $('modelInfoPanel').querySelectorAll('img').forEach(i=>i.onerror=()=>i.hidden=true);
+}
+let infoTimer;
+function showModelInfo(open){clearTimeout(infoTimer);$('modelInfoPanel').hidden=!open;$('modelInfoChip').setAttribute('aria-expanded',String(open));if(open){const r=$('modelInfoChip').getBoundingClientRect(),box=$('modelInfoPanel');box.style.left=Math.max(12,Math.min(innerWidth-box.offsetWidth-12,r.left))+'px';box.style.top=Math.max(10,Math.min(innerHeight-box.offsetHeight-12,r.bottom+6))+'px';}}
+on('modelInfoChip','click',()=>showModelInfo($('modelInfoPanel').hidden));on('modelIdentity','pointerenter',()=>showModelInfo(true));on('modelIdentity','pointerleave',()=>{infoTimer=setTimeout(()=>showModelInfo(false),180);});on('modelInfoChip','focus',()=>showModelInfo(true));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){showModelInfo(false);setLayoutMenu(false);}});
+function leftWidth(){return storageGet('tr-lab-left-width',285);}
+function setLeftWidth(width,persist=true){width=Math.max(240,Math.min(420,Number(width)||285));document.documentElement.style.setProperty('--left-size',width+'px');$('leftResizeHandle').setAttribute('aria-valuenow',String(width));if(persist)storageSet('tr-lab-left-width',width);}
+function resizePanels(){setLeftWidth(leftWidth(),false);setResearchWidth(storageGet('tr-lab-sidebar',330),false);}
+function resetPanelWidths(){storageSet('tr-lab-left-width',285);storageSet('tr-lab-sidebar',330);resizePanels();}
+let leftDragging=false;
+on('leftResizeHandle','pointerdown',e=>{leftDragging=true;$('leftResizeHandle').setPointerCapture(e.pointerId);document.body.classList.add('is-resizing');});on('leftResizeHandle','pointermove',e=>{if(!leftDragging)return;const tools=$('inspector').getBoundingClientRect().left;setLeftWidth(e.clientX-tools);setResearchWidth(storageGet('tr-lab-sidebar',330),false);});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])on('leftResizeHandle',event,()=>{leftDragging=false;document.body.classList.remove('is-resizing');});on('leftResizeHandle','dblclick',()=>{setLeftWidth(285);resizePanels();});on('leftResizeHandle','keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();setLeftWidth(e.key==='Home'?240:e.key==='End'?420:leftWidth()+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?40:10));resizePanels();});
+function setRailMode(mode,persist=true){const auto=mode==='auto';$('appShell').classList.toggle('tabs-autohide',auto);$('appShell').classList.remove('rail-open');$('railPin').title=auto?'Pin project tabs':'Auto-hide project tabs';$('railPin').setAttribute('aria-label',$('railPin').title);document.querySelectorAll('[data-layout=pinned]').forEach(b=>b.setAttribute('aria-checked',String(!auto)));document.querySelectorAll('[data-layout=auto]').forEach(b=>b.setAttribute('aria-checked',String(auto)));if(persist)storageSet('tr-lab-rail-mode',auto?'auto':'pinned');}
+on('railPin','click',()=>setRailMode($('appShell').classList.contains('tabs-autohide')?'pinned':'auto'));
+let railTimer;const revealRail=()=>{clearTimeout(railTimer);$('appShell').classList.add('rail-open');};const hideRail=()=>{clearTimeout(railTimer);railTimer=setTimeout(()=>$('appShell').classList.remove('rail-open'),250);};
+on('railReveal','pointerenter',revealRail);on('railReveal','focus',revealRail);on('railReveal','click',revealRail);on('railReveal','pointerleave',hideRail);on('documentRail','pointerenter',revealRail);on('documentRail','pointerleave',hideRail);on('documentRail','focusout',hideRail);
+on('chatModelPanel','toggle',()=>{storageSet('tr-lab-chat-model-collapsed',!$('chatModelPanel').open);});
+let layoutTimer;function setLayoutMenu(open){clearTimeout(layoutTimer);$('layoutMenu').hidden=!open;$('toggleResearch').setAttribute('aria-expanded',String(open));}
+on('layoutMenuRoot','pointerenter',()=>setLayoutMenu(true));on('layoutMenuRoot','pointerleave',()=>{layoutTimer=setTimeout(()=>setLayoutMenu(false),220);});
+document.addEventListener('pointerdown',e=>{if(!$('layoutMenuRoot').contains(e.target))setLayoutMenu(false);});
+document.querySelectorAll('[data-layout]').forEach(b=>b.onclick=()=>{const action=b.dataset.layout;if(action==='research')toggleResearch();else if(action==='window')popResearch();else if(action==='tab')window.open(researchUrl(),'_blank','noopener');else if(action==='left')$('collapseLeft').click();else if(action==='reset')resetPanelWidths();else setRailMode(action);setLayoutMenu(false);});
+on('layoutMenu','keydown',e=>{const items=[...$('layoutMenu').querySelectorAll('button')],at=items.indexOf(document.activeElement);let i;if(e.key==='ArrowDown')i=(at+1)%items.length;if(e.key==='ArrowUp')i=(at+items.length-1)%items.length;if(e.key==='Home')i=0;if(e.key==='End')i=items.length-1;if(i!==undefined){e.preventDefault();items[i].focus();}});
+const deskChannel=typeof BroadcastChannel==='function'?new BroadcastChannel('thirdrailify-lab-desk-v3'):null;
+function publishDesk(value){deskChannel?.postMessage(value);}
+function researchUrl(){if(!state.activeSessionId){toast('Open a project before detaching research.',true);return '#';}return '/research?session='+state.activeSessionId+'&tab='+(state.researchTab||'chat');}
+let researchWindow=null;
+function popResearch(){if(!state.activeSessionId)return toast('Open a project first.',true);captureSession(false);const url=researchUrl();researchWindow=window.open(url,'tr-lab-research-'+state.activeSessionId,'popup=yes,width=840,height=960,resizable=yes,scrollbars=yes');if(!researchWindow)return toast('Popup blocked. Use Open research in a new tab.',true);if(!$('appShell').classList.contains('research-closed'))toggleResearch();researchWindow.focus();}
+on('popoutResearch','click',popResearch);on('researchTabLink','click',e=>{if(!state.activeSessionId){e.preventDefault();return;}captureSession(false);$('researchTabLink').href=researchUrl();});
+on('dockResearch','click',()=>{if(state.chatBusy)throw new Error('Finish or stop the response first.');publishDesk({type:'dock',sid:state.activeSessionId});if(window.opener&&!window.opener.closed){window.opener.focus();window.close();}else location.assign('/');});
+function useResearchPrompt(text,sid=state.activeSessionId){const d=readDoc(sid);if(!d)return toast('The originating project is closed. Reopen it from Library first.',true);d.generation.prompt=text;d.dirty=true;writeDoc(d);if(state.activeSessionId===sid&&!state.researchOnly){$('prompt').value=text;setMode('generate');}publishDesk({type:'use-prompt',sid,text});toast('Response placed in this project’s prompt. Review before generating.');}
+if(deskChannel)deskChannel.onmessage=({data})=>{
+  if(!data||typeof data!=='object')return;
+  if(data.type==='dock'&&!state.researchOnly&&readDoc(data.sid)){switchSession(data.sid).then(()=>{$('appShell').classList.remove('research-closed');});}
+  if(data.type==='use-prompt'&&data.sid===state.activeSessionId&&!state.researchOnly){$('prompt').value=data.text;setMode('generate');}
+  if(data.type==='closed'&&data.sid===state.activeSessionId){state.activeSessionId=null;if(state.researchOnly){refreshChat();renderTabs();}else showLibrary();}
+  if(data.sid!==state.activeSessionId||data.provider!==chatProvider())return;
+  if(data.type==='chat-busy'){state.remoteChatBusy=data.busy;$('chatStatus').textContent=data.busy?'RESPONSE IN OTHER VIEW':'PROJECT CONVERSATION';if(!data.busy)refreshChat();}
+  if(data.type==='chat-preview'&&!chatRun){let node=$('remoteChatPreview');if(!node){node=addMessage('assistant','');node.id='remoteChatPreview';}node.querySelector('.message-text').textContent=data.text;}
+};
+window.addEventListener('beforeunload',e=>{captureSession(false);if(state.chatBusy){e.preventDefault();e.returnValue='';}});
+window.addEventListener('storage',e=>{
+  if(e.key===WORKSPACE_KEY||e.key?.startsWith(DOC_PREFIX)){renderTabs();if(state.activeSessionId&&!readDoc(state.activeSessionId)){state.activeSessionId=null;refreshChat();if(!state.researchOnly)showLibrary();}else if(e.key===DOC_PREFIX+state.activeSessionId){const doc=readDoc(state.activeSessionId);$('sessionName').textContent=doc?.name||'No open project';}}
+  if(e.key===draftKey(chatProvider())&&document.activeElement!==$('chatInput'))$('chatInput').value=storageGet(e.key,'');
+  if(e.key===chatKey(chatProvider())&&!chatRun)refreshChat();
+});
+function archiveChat(){const sid=state.activeSessionId,p=chatProvider(),messages=storageGet(chatKey(p,sid),[]);if(!sid||!messages.length)return;const list=storageGet('tr-lab-v3-history:'+sid,[]);list.unshift({id:crypto.randomUUID(),provider:p,model:$('chatModelSelect').value,title:messages.find(m=>m.role==='user')?.content.slice(0,75)||'Conversation',updatedAt:new Date().toISOString(),messages});storageSet('tr-lab-v3-history:'+sid,list.slice(0,50));markResearchDirty();}
+function showChatHistory(){
+  const sid=state.activeSessionId;if(!sid)return;const entries=storageGet('tr-lab-v3-history:'+sid,[]);
+  // Legacy archives are discoverable without modifying/removing the old keys.
+  for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key.startsWith('tr-lab-chat-saved:')){const d=storageGet(key,null);if(d)entries.push({...d,legacy:true});}}
+  $('chatHistoryList').innerHTML=entries.length?entries.map(e=>`<div class="project-entry"><button class="project-chip" data-chat-open="${e.id}">${esc(e.title)}<small>${esc(e.provider==='openai'?'GPT':'Grok')} · ${e.legacy?'Legacy archive':esc(readDoc(sid)?.name)} · ${esc(new Date(e.updatedAt).toLocaleString('en-US'))}</small></button><button class="icon-button danger-text" data-chat-delete="${e.id}" aria-label="Delete saved conversation ${esc(e.title)}">${icon('trash')}</button></div>`).join(''):'<p class="helper">No archived conversations in this project. New conversation archives the current one first.</p>';
+  $('chatHistoryList').querySelectorAll('[data-chat-open]').forEach(b=>b.onclick=async()=>{if(chatBusyForSession())return toast('Finish the current response first.',true);const e=entries.find(e=>e.id===b.dataset.chatOpen);archiveChat();$('chatProvider').value=e.provider;storageSet(chatKey(e.provider),e.messages);saveResearchPrefs();state.chosen[modelKey(e.provider,'chat')]=e.model;refreshChat();await loadChatModels();$('chatHistoryDialog').close();markResearchDirty();});
+  $('chatHistoryList').querySelectorAll('[data-chat-delete]').forEach(b=>b.onclick=async()=>{const e=entries.find(e=>e.id===b.dataset.chatDelete);if(!await askSession({title:'Delete saved conversation?',text:'Remove this archived conversation from local project history. No provider-side record is changed.',confirm:'Delete',discard:false}))return;if(e.legacy)localStorage.removeItem('tr-lab-chat-saved:'+e.id);else storageSet('tr-lab-v3-history:'+sid,entries.filter(x=>!x.legacy&&x.id!==e.id));markResearchDirty();showChatHistory();});
+  if(!$('chatHistoryDialog').open)$('chatHistoryDialog').showModal();
+}
+on('chatHistory','click',showChatHistory);
+on('chatModelSelect','change',saveResearchPrefs);
+on('parameterForm','submit',e=>e.preventDefault());
+on('thumbCanvas','pointerup',()=>captureSession());
+on('parameterForm','change',()=>{captureSession();renderWorkflow();});
+on('modelInfoPanel','pointerenter',()=>clearTimeout(infoTimer));on('modelInfoPanel','pointerleave',()=>{infoTimer=setTimeout(()=>showModelInfo(false),180);});
+on('contextRun','click',()=>$('generate').click());on('mobileChatHistory','click',showChatHistory);on('mobileNewChat','click',()=>$('newChat').click());on('mobileDeleteChat','click',()=>$('deleteChat').click());on('imageModelSelect','change',()=>captureSession());
 boot().catch(e=>{$('serverStatus').textContent='Local server unavailable';error('Start START-LAB.cmd and open the local address. '+e.message);});

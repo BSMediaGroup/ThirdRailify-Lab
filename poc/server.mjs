@@ -1,46 +1,36 @@
 import http from 'node:http';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {readFile,writeFile,mkdir,readdir,stat} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,readdir,stat,unlink} from 'node:fs/promises';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {LabError,DEFAULTS,SECRET_KEYS,CATALOG,readConfig,updateConfig,atomicWrite,sanitize,decodeImage,imageType,parseModel} from './lib/core.mjs';
 import {Providers} from './lib/providers.mjs';
+import {discoverBrandAssets} from './lib/brand.mjs';
+import {preparePrompt} from './public/model-schema.js';
+import {ModelCatalog,modelKind} from './lib/models.mjs';
 
 const HERE=path.dirname(fileURLToPath(import.meta.url));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const FINAL=new Set(['succeeded','failed','canceled','submission_uncertain','interrupted','download_failed']);
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.ttf':'font/ttf','.woff':'font/woff','.woff2':'font/woff2','.json':'application/json'};
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.otf':'font/otf','.ttf':'font/ttf','.woff':'font/woff','.woff2':'font/woff2','.json':'application/json'};
 
-async function discoverFonts(root){
-  const found={};let visited=0;
-  const classify=name=>{const n=name.toLowerCase();if(n.includes('american')&&n.includes('captain'))return 'display';if(n.includes('blinker')&&n.includes('regular'))return 'body';if(n.includes('blinker')&&n.includes('semibold'))return 'bodybold';if(n.includes('geistmono')||n.includes('geist-mono'))return 'mono';};
-  async function walk(dir,depth){
-    if(depth>5||visited>4500)return;
-    let entries;try{entries=await readdir(dir,{withFileTypes:true});}catch{return;}
-    for(const e of entries){visited++;if(e.isSymbolicLink())continue;
-      const full=path.join(dir,e.name);
-      if(e.isDirectory()&&!/^(node_modules|\.git|\.data|\.artifacts|dist|build|logs|migrations)$/.test(e.name))await walk(full,depth+1);
-      else if(e.isFile()&&/\.(ttf|woff2?)$/i.test(e.name)){const kind=classify(e.name);if(kind&&!found[kind])found[kind]=full;}
-    }
-  }
-  await walk(path.join(path.dirname(root),'ThirdRailify'),0);
-  return found;
-}
 export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=2500,discoverBrand=true}={}){
   let config=await readConfig(root);
   const data=path.join(root,'.data');await mkdir(path.join(data,'assets'),{recursive:true});
   let state={jobs:[],assets:{},projects:[]};
   try{state=JSON.parse(await readFile(path.join(data,'state.json'),'utf8'));}catch(e){if(e.code!=='ENOENT')throw new Error('Local history could not be read. Preserve .data/state.json and repair it before starting.');}
   const csrf=randomBytes(24).toString('hex'),providers=new Providers(()=>config,fetchImpl);
-  const fonts=discoverBrand?await discoverFonts(root):{};
+  const brand=discoverBrand?await discoverBrandAssets(root):{fonts:{},logo:null,sources:{},logoSource:null};
+  const fonts=brand.fonts,modelCatalog=new ModelCatalog(providers);
   let writeChain=Promise.resolve(),stopping=false,active=0;
   const activeIds=new Set();
   const submissions=new Map();
+  const deletingAssets=new Set();
   const save=()=>{const snapshot=JSON.stringify(state,null,2);const operation=writeChain.then(()=>atomicWrite(path.join(data,'state.json'),snapshot));writeChain=operation.catch(()=>{});return operation;};
-  function publicJob(j){return {id:j.id,requestId:j.requestId,provider:j.provider,model:j.model,version:j.version,prompt:j.prompt,createdAt:j.createdAt,status:j.status,phase:j.phase,error:j.error,providerId:j.providerId,providerUrl:j.provider==='replicate'&&j.providerId?`https://replicate.com/p/${encodeURIComponent(j.providerId)}`:null,assets:j.assets||[],input:safeInput(j.input),options:j.options,metrics:j.metrics,warning:j.warning};}
+  function publicJob(j){return {id:j.id,sessionId:j.sessionId||null,requestId:j.requestId,provider:j.provider,model:j.model,version:j.version,prompt:j.prompt,createdAt:j.createdAt,status:j.status,phase:j.phase,error:j.error,providerId:j.providerId,providerUrl:j.provider==='replicate'&&j.providerId?`https://replicate.com/p/${encodeURIComponent(j.providerId)}`:null,assets:(j.assets||[]).filter(a=>state.assets[a.id]),input:safeInput(j.input),options:j.options,metrics:j.metrics,warning:j.warning};}
   function safeInput(input){return Object.fromEntries(Object.entries(input||{}).map(([k,v])=>[k,typeof v==='string'&&v.startsWith('data:')?'[reference image omitted from history preview]':v]));}
-  function publicConfig(){return {keys:Object.fromEntries(SECRET_KEYS.map(k=>[k,Boolean(config[k])])),models:{openaiImage:config.OPENAI_IMAGE_MODEL,openaiChat:config.OPENAI_CHAT_MODEL,xaiImage:config.XAI_IMAGE_MODEL,xaiChat:config.XAI_CHAT_MODEL},fonts:Object.keys(fonts),port:server.address()?.port,localOnly:true,webhooks:false};}
+  function publicConfig(){return {keys:Object.fromEntries(SECRET_KEYS.map(k=>[k,Boolean(config[k])])),models:{openaiImage:config.OPENAI_IMAGE_MODEL,openaiChat:config.OPENAI_CHAT_MODEL,xaiImage:config.XAI_IMAGE_MODEL,xaiChat:config.XAI_CHAT_MODEL},fonts:Object.keys(fonts),brand:{fonts:brand.sources,logo:Boolean(brand.logo),logoSource:brand.logoSource},version:'0.3.0-poc',port:server.address()?.port,localOnly:true,webhooks:false};}
   async function addAsset(bytes,meta={}){
     if(bytes.length>32*1024*1024)throw new LabError('Image exceeds the 32 MB limit.',413);
     const type=imageType(bytes),id=randomUUID()+'.'+type.ext;
@@ -55,6 +45,23 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
       const bytes=await providers.downloadReplicate(urls[i]);
       const asset=await addAsset(bytes,{source:'generation',jobId:job.id,title:job.prompt.slice(0,90)});job.assets.push(asset);await save();
     }
+  }
+  async function materializeReferences(input){
+    const visit=async(v,depth=0)=>{
+      if(depth>8)throw new LabError('Input nesting is too deep.');
+      if(typeof v==='string'&&v.startsWith('/assets/')){
+        const id=v.slice(8),a=state.assets[id];if(!a||deletingAssets.has(id))throw new LabError('An input image no longer exists. Reattach it.');
+        const bytes=await readFile(path.join(data,'assets',id));return `data:${a.mime};base64,${bytes.toString('base64')}`;
+      }
+      if(Array.isArray(v))return Promise.all(v.map(x=>visit(x,depth+1)));
+      if(v&&typeof v==='object'){const out={};for(const [k,x] of Object.entries(v)){if(['__proto__','constructor','prototype'].includes(k))throw new LabError('Invalid input field.');out[k]=await visit(x,depth+1);}return out;}
+      return v;
+    };return visit(input);
+  }
+  function projectAssetIds(project){
+    const ids=new Set(project?.assetId?[project.assetId]:[]);
+    const visit=(v,depth=0)=>{if(depth>10)return;if(typeof v==='string'&&/^\/assets\/[a-f0-9-]+\.(png|jpg|webp)$/.test(v))ids.add(v.slice(8));else if(Array.isArray(v))v.forEach(x=>visit(x,depth+1));else if(v&&typeof v==='object')Object.values(v).forEach(x=>visit(x,depth+1));};
+    visit(project?.generation?.input);return [...ids];
   }
   async function run(job){
     try{
@@ -126,7 +133,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
   }
   const server=http.createServer(async(req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Frame-Options','DENY');res.setHeader('X-Robots-Tag','noindex, nofollow');
-    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
     try{
       const port=server.address()?.port,hosts=new Set([`127.0.0.1:${port}`,`localhost:${port}`]);
       if(!hosts.has(req.headers.host)||req.headers['sec-fetch-site']==='cross-site')throw new LabError('This POC accepts local same-origin requests only.',403,'local_only');
@@ -135,12 +142,19 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         if(!hosts.has(String(req.headers.origin||'').replace(/^http:\/\//,''))||req.headers['x-lab-csrf']!==csrf)throw new LabError('Refresh the local Lab page before submitting.',403,'origin_rejected');
       }
       const url=new URL(req.url,'http://'+req.headers.host),route=url.pathname;
-      if(route==='/api/state'&&req.method==='GET')return send(res,200,{ok:true,csrf,config:publicConfig(),catalog:CATALOG,jobs:state.jobs.slice(-100).reverse().map(publicJob),assets:[...new Map([...Object.values(state.assets).slice(-200).reverse(),...state.projects.map(p=>state.assets[p.project?.assetId]).filter(Boolean)].map(a=>[a.id,a])).values()],projects:state.projects});
-      if(route==='/api/jobs'&&req.method==='GET')return send(res,200,{ok:true,jobs:state.jobs.slice(-100).reverse().map(publicJob)});
+      if(route==='/api/state'&&req.method==='GET')return send(res,200,{ok:true,csrf,config:publicConfig(),catalog:CATALOG,jobs:state.jobs.filter(j=>!j.deletedAt).slice(-100).reverse().map(publicJob),assets:[...new Map([...Object.values(state.assets).slice(-200).reverse(),...state.projects.flatMap(p=>projectAssetIds(p.project).map(id=>state.assets[id])).filter(Boolean)].map(a=>[a.id,a])).values()],projects:state.projects,preferences:state.preferences||{}});
+      if(route==='/api/jobs'&&req.method==='GET')return send(res,200,{ok:true,jobs:state.jobs.filter(j=>!j.deletedAt).slice(-100).reverse().map(publicJob)});
       if(route==='/api/model'&&req.method==='GET')return send(res,200,{ok:true,model:await providers.model(url.searchParams.get('id'))});
       if(route==='/api/models/search'&&req.method==='GET')return send(res,200,{ok:true,items:await providers.search(url.searchParams.get('q'))});
+      if(route==='/api/provider-models'&&req.method==='GET')return send(res,200,{ok:true,...await modelCatalog.list(url.searchParams.get('provider'),url.searchParams.get('kind'),{refresh:url.searchParams.get('refresh')==='1'})});
+      if(route==='/api/preferences'&&req.method==='POST'){
+        const b=await bodyJson(req),presets=b.presets;
+        if(!presets||typeof presets!=='object'||Array.isArray(presets))throw new LabError('Preset settings are invalid.');
+        const clean={};for(const id of ['original','cinematic','thumbnail','railify']){if(typeof presets[id]!=='string'||presets[id].length>8000)throw new LabError('Each preset must contain at most 8,000 characters.');clean[id]=presets[id];}
+        state.preferences={...state.preferences,presets:clean};await save();return send(res,200,{ok:true,preferences:state.preferences});
+      }
       if(route==='/api/settings'&&req.method==='POST'){
-        config=await updateConfig(root,await bodyJson(req));providers.cache.clear();return send(res,200,{ok:true,config:publicConfig()});
+        config=await updateConfig(root,await bodyJson(req));providers.cache.clear();modelCatalog.clear();return send(res,200,{ok:true,config:publicConfig()});
       }
       if(route==='/api/settings/test'&&req.method==='POST'){
         const {provider}=await bodyJson(req);if(!['replicate','openai','xai'].includes(provider))throw new LabError('Unknown provider.');return send(res,200,await providers.test(provider));
@@ -160,13 +174,18 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         if(!['replicate','openai','xai'].includes(b.provider))throw new LabError('Choose an image provider.');
         providers.key(b.provider);
         if(state.jobs.filter(j=>!FINAL.has(j.status)).length>=6)throw new LabError('Six jobs are already queued/running. Wait for a job to finish.',429);
-        const prompt=String(b.prompt||'').trim();if(!prompt||prompt.length>24000)throw new LabError('Enter a prompt between 1 and 24,000 characters.');
+        const prompt=String(b.prompt||'').trim();if(prompt.length>24000||b.provider!=='replicate'&&!prompt)throw new LabError('Enter a prompt between 1 and 24,000 characters.');
         const model=b.provider==='replicate'?(parseModel(b.model).id+(parseModel(b.model).version?':'+parseModel(b.model).version:'')):String(b.model||config[b.provider==='openai'?'OPENAI_IMAGE_MODEL':'XAI_IMAGE_MODEL']);
         if(!/^[a-zA-Z0-9_./:-]{1,180}$/.test(model))throw new LabError('Invalid model identifier.');
-        const job={id:randomUUID(),requestId:b.requestId,provider:b.provider,model,prompt,input:b.input||{},options:b.options||{},createdAt:new Date().toISOString(),status:'queued',phase:'Queued locally',assets:[]};
+        const job={id:randomUUID(),sessionId:/^[a-f0-9-]{36}$/.test(b.sessionId||'')?b.sessionId:null,requestId:b.requestId,provider:b.provider,model,prompt,input:b.input||{},options:b.options||{},createdAt:new Date().toISOString(),status:'queued',phase:'Queued locally',assets:[]};
         if(b.provider==='replicate'){
           const m=await providers.model(model);
-          if(m.promptKey)job.input[m.promptKey]=prompt;
+          job.input=preparePrompt(job.input,m,b.prompt);
+          job.version=m.version;
+          // Retain the validated schema/version for the queued request. Official models use their documented endpoint.
+          job.validatedModel={id:m.id,version:m.version,official:m.official,schema:m.schema};
+          job.input=await materializeReferences(job.input);
+          if(!job.prompt&&m.promptKey&&typeof job.input[m.promptKey]==='string')job.prompt=job.input[m.promptKey];
           const {validateInput}=await import('./lib/core.mjs');validateInput(job.input,m.schema);
         }
         if(b.provider==='openai'){
@@ -194,15 +213,41 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
       }
       if(route==='/api/projects'&&req.method==='POST'){
         const b=await bodyJson(req);const project=b.project;
-        if(!project||typeof project!=='object'||JSON.stringify(project).length>120000)throw new LabError('Project is too large or invalid.');
-        if(project.assetId&&!state.assets[project.assetId])throw new LabError('Project image no longer exists.');
+        if(!project||typeof project!=='object'||JSON.stringify(project).length>900000)throw new LabError('Project is too large or invalid.');
+        for(const id of projectAssetIds(project))if(!state.assets[id]||deletingAssets.has(id))throw new LabError('A session image no longer exists.');
         const id=/^[a-f0-9-]{36}$/.test(b.id||'')?b.id:randomUUID();const saved={id,name:String(b.name||'Untitled thumbnail').slice(0,100),updatedAt:new Date().toISOString(),project};
         const i=state.projects.findIndex(p=>p.id===id);if(i>=0)state.projects[i]=saved;else state.projects.push(saved);await save();return send(res,200,{ok:true,project:saved});
+      }
+      if(route.match(/^\/api\/(projects|jobs|assets)\/[a-f0-9-]+(?:\.(?:png|jpg|webp))?\/delete$/)&&req.method==='POST'){
+        await bodyJson(req);const [, ,kind,id]=route.split('/');
+        if(kind==='projects'){
+          const i=state.projects.findIndex(p=>p.id===id);if(i<0)throw new LabError('Saved session not found.',404);
+          state.projects.splice(i,1);await save();return send(res,200,{ok:true,message:'Saved session deleted. Its images and exports are retained.'});
+        }
+        if(kind==='jobs'){
+          const job=state.jobs.find(j=>j.id===id);if(!job)throw new LabError('Generation not found.',404);
+          if(!FINAL.has(job.status))throw new LabError('Wait for completion or cancel this generation before deleting its history.',409,'job_active');
+          job.deletedAt=new Date().toISOString();job.prompt='';job.input={};job.options={};job.error=null;job.outputUrls=[];
+          await save();return send(res,200,{ok:true,message:'Generation history removed. Saved images are retained.'});
+        }
+        const asset=state.assets[id];if(!asset)throw new LabError('Image not found.',404);
+        const refs=state.projects.filter(p=>projectAssetIds(p.project).includes(id));
+        if(refs.length)throw new LabError('This image is used by '+refs.length+' saved session(s). Delete or change those sessions first.',409,'asset_in_use');
+        if(state.jobs.some(j=>activeIds.has(j.id)&&(j.assets||[]).some(a=>a.id===id)))throw new LabError('This image is still being saved by a running job.',409,'asset_busy');
+        // Prevent a concurrent save from referencing an image being deleted.
+        if(deletingAssets.has(id))throw new LabError('This image is already being deleted.',409,'asset_busy');
+        deletingAssets.add(id);
+        try{
+          try{await unlink(path.join(data,'assets',id));}catch(e){if(e.code!=='ENOENT')throw e;}
+          delete state.assets[id];for(const j of state.jobs)j.assets=(j.assets||[]).filter(a=>a.id!==id);
+          await save();return send(res,200,{ok:true,message:'Local image deleted. No provider-side files were changed.'});
+        }finally{deletingAssets.delete(id);}
       }
       if(route==='/api/chat'&&req.method==='POST'){
         const b=await bodyJson(req);if(!['openai','xai'].includes(b.provider))throw new LabError('Choose GPT or Grok.');
         if(!Array.isArray(b.messages)||b.messages.length>40||b.messages.some(m=>!['user','assistant'].includes(m.role)||typeof m.content!=='string')||JSON.stringify(b.messages).length>80000)throw new LabError('Conversation is too long. Start a new chat.');
-        providers.key(b.provider);const model=config[b.provider==='openai'?'OPENAI_CHAT_MODEL':'XAI_CHAT_MODEL'];
+        providers.key(b.provider);const model=String(b.model||config[b.provider==='openai'?'OPENAI_CHAT_MODEL':'XAI_CHAT_MODEL']);
+        if(!/^[a-zA-Z0-9_.:-]{1,180}$/.test(model)||modelKind(b.provider,model)==='image')throw new LabError('Choose a chat model from the provider dropdown.');
         const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),180000);res.on('close',()=>controller.abort());
         res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-store','Connection':'keep-alive'});
         const event=(type,data)=>{if(!res.destroyed)res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);};
@@ -219,7 +264,11 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         const file=fonts[route.split('/')[2]];if(!file)throw new LabError('Brand font not installed locally.',404);
         res.setHeader('Content-Type',mime[path.extname(file).toLowerCase()]||'font/ttf');res.end(await readFile(file));return;
       }
-      const files={'/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/icons.svg':'icons.svg'};
+      if(route==='/brand-assets/labs0.svg'&&req.method==='GET'){
+        if(!brand.logo)throw new LabError('Place your labs0.svg in assets/logos in the Lab repo or POC folder, then restart the Lab.',404,'brand_asset_missing');
+        res.setHeader('Content-Type','image/svg+xml');res.setHeader('Cache-Control','no-cache');res.end(await readFile(brand.logo));return;
+      }
+      const files={'/model-schema.js':'model-schema.js','/workspace.css':'workspace.css','/research':'index.html','/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/upgrade.css':'upgrade.css','/icons.svg':'icons.svg'};
       if(req.method==='GET'&&files[route]){const file=files[route];res.setHeader('Content-Type',mime[path.extname(file)]);res.setHeader('Cache-Control','no-cache');res.end(await readFile(path.join(publicRoot,file)));return;}
       throw new LabError('Not found.',404,'not_found');
     }catch(e){if(res.headersSent){res.end();return;}send(res,e.status||500,{ok:false,error:sanitize(e.message,config),code:e.code||'local_error'});}

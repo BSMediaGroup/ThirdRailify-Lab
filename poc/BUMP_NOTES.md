@@ -1,6 +1,6 @@
 # BUMP_NOTES
 
-CURRENT VER= 0.1.0-poc / PENDING VER= 0.1.0-poc
+CURRENT VER= 0.3.0-poc / PENDING VER= 0.3.0-poc
 
 ## 2026-09-10 — First local Lab POC
 
@@ -28,3 +28,50 @@ CURRENT VER= 0.1.0-poc / PENDING VER= 0.1.0-poc
 All 13 automated tests passed, exercising actual local server paths with simulated provider HTTP. Browser bridge acceptance covers layout, local composition/persistence and controls. No user keys were supplied and no paid live generation was performed. Current model/account access must be verified by the user's first generation.
 
 This POC is local-only. Shared Admin-account approvals, Turnstile, durable hosted services and authenticated private asset delivery are deferred to the approved Codex implementation. The unauthenticated local POC must not be publicly deployed or tunneled.
+
+
+## 2026-09-11 — POC 0.2 model, session and workspace upgrade
+
+### Operator changes
+
+- Added provider-returned GPT/Grok model dropdowns for images and research chat, refresh controls and saved preferences. Removed invented direct-provider default model IDs for new installs; existing .env preferences are retained.
+- Added Save session and New/discard workspace, delete saved sessions, delete completed generation history and delete unreferenced local assets. Legacy thumbnail projects still open; destructive actions require confirmation.
+- Added current-chat deletion, archived-chat history and deletion; New chat retains the previous conversation in history.
+- Added dedicated research tab/window, provider/history/draft continuity, cross-view Use as prompt and Dock. Added icon-only left sidebar and viewport-based broad research resizing.
+- Added Admin-style account/login scaffold, explicitly not authenticated. Mobile trigger is avatar-only, with no extra chevron or role badge.
+- Matched inspected Public brand mark box, gold mask and hover CSS; motif resolves to the user's local labs0.svg. Fixed named American Captain TTF/OTF lookup when installed under repo/poc. No font files are bundled.
+
+### Technical and custody
+
+- Added lib/models.mjs and lib/brand.mjs; extended server with safe catalogue, delete and research/allowlisted-brand routes. Server catalogue cache and inflight coalescing avoid repeated lookups. API keys remain server-side.
+- Image generation and chat use the actual selected model value. OpenAI ID-based capability filtering is explained; model-specific provider errors stay visible. Cached failures are not called verified live results.
+- Generation-history tombstones retain request-ID idempotency without keeping the deleted prompt. Session references protect image deletion; deletion-in-progress blocks conflicting session saves.
+- Shared browser chat history/drafts use existing localStorage keys, BroadcastChannel and per-provider Web Locks where supported. No Windows environment variables, provider secrets or production projects are changed.
+- Added public/upgrade.css and tests/upgrade.test.mjs. README tree and setup/update/testing guides are updated. No source files removed. Update ZIP excludes .env, .data, assets, fonts and test outputs.
+
+### Acceptance
+
+26 Node tests pass with simulated provider HTTP, no paid calls. Ten connected browser workflow groups pass using actual app code and the local HTTP server through the managed-browser bridge. Inspected desktop, mobile, account menu, library, wide sidebar and research-only captures. Tests cover exact model propagation, safe deletion, provider cache/error handling, nested-poc TTF/OTF/asset resolution and access boundaries. User-local font/SVG appearance and actual paid account generation cannot be visually/live verified in this runtime.
+
+
+## 2026-09-11 — POC 0.3 shared workspace and complete cumulative release
+
+### Operator changes
+
+- Shared project tabs below the header connect Studio and Research; titles, close confirmations, saved state and compact conversation actions are included. Auto-hide overlays the workspace instead of shifting it.
+- Full Library and Settings shell pages; the final closed tab returns to Library. Session-dependent Create/Compose controls are disabled without a project.
+- Header layout menu, collapsible Research model selection, bounded left-inspector resizing and broad right-sidebar resizing.
+- Reference-image previews for uploads and HTTPS URLs; actual schema-driven central Run model workflow without a forced text prompt on input-only models.
+- Editable prompt presets; returned model cover art and a compact selected-model information chip. Small helper text is more legible and application-owned labels use US English.
+
+### Persistence and compatibility
+
+- Model references are stored as local assets, materialized server-side only for submission, retained in saved projects and protected from deletion while referenced.
+- Saved projects include generation, composition, per-provider research and drafts. Legacy project records remain readable. Job/session identity prevents a late result from replacing a different active project's canvas.
+- Existing .env, .data, browser storage and locally supplied brand assets are not replaced by the release ZIP. The local American Captain TTF/OTF and labs0.svg resolver remains read-only.
+
+### Package completion
+
+- This release is one complete cumulative ZIP, not an eight-file patch: includes unchanged style.css, upgrade.css, brand/models modules and the Windows launcher alongside all updated files.
+- Updated package version, README tree, setup/update/testing records, and added a SHA-256 package manifest plus optional read-only verifier. No runtime dependency installation or build step.
+- Current validation and exact overwrite/fresh-install checks are recorded in docs/TESTING.md. Provider responses in automated tests are simulated; no paid live generation or production login is claimed.

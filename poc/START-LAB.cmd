@@ -13,5 +13,6 @@ if errorlevel 1 (
   exit /b 1
 )
 node.exe server.mjs --open
-if errorlevel 1 pause
-endlocal
+set "LAB_EXIT=%ERRORLEVEL%"
+if not "%LAB_EXIT%"=="0" pause
+endlocal & exit /b %LAB_EXIT%

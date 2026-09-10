@@ -1,3 +1,4 @@
+import {workflowFor} from '../public/model-schema.js';
 import {LabError,CATALOG,parseModel,normalizeInputSchema,validateInput,isDeliveryUrl,imageType,sanitize,flattenOutput} from './core.mjs';
 
 export class Providers {
@@ -31,7 +32,7 @@ export class Providers {
   async search(q){
     if(!q?.trim())return CATALOG;
     const data=await this.request('replicate','/models',{method:'QUERY',body:q.trim().slice(0,160)});
-    return (data.results||[]).slice(0,30).map(m=>({id:`${m.owner}/${m.name}`,name:m.name,description:m.description||'',tag:m.visibility||'Model',url:m.url}));
+    return (data.results||[]).slice(0,30).map(modelMetadata);
   }
   async model(ref){
     const parsed=parseModel(ref),cacheKey=parsed.id+(parsed.version?':'+parsed.version:'');
@@ -41,11 +42,11 @@ export class Providers {
     const doc=version?.openapi_schema;
     if(!doc?.components?.schemas?.Input)throw new LabError('This model has no readable input schema. Try another model/version or check model access.',422,'schema_unavailable');
     const schema=normalizeInputSchema(doc);
-    const value={id:parsed.id,ref:cacheKey,name:model.name,description:model.description||'',version:version.id,official:!parsed.version&&Boolean(model.is_official||CATALOG.find(m=>m.id===parsed.id)?.official),schema,rawSchema:doc,url:`https://replicate.com/${parsed.id}`,licenseUrl:model.license_url||null,promptKey:schema.properties?.prompt?'prompt':schema.properties?.text?'text':null};
-    this.cache.set(cacheKey,{at:Date.now(),value});return value;
+    const value={...modelMetadata(model),id:parsed.id,ref:cacheKey,name:model.name,description:model.description||'',version:version.id,official:!parsed.version&&Boolean(model.is_official||CATALOG.find(m=>m.id===parsed.id)?.official),schema,rawSchema:doc,url:`https://replicate.com/${parsed.id}`,licenseUrl:model.license_url||null,promptKey:schema.properties?.prompt?.type==='string'?'prompt':schema.properties?.text?.type==='string'?'text':null};
+    value.workflow=workflowFor(value);this.cache.set(cacheKey,{at:Date.now(),value});return value;
   }
   async createReplicate(job){
-    const model=await this.model(job.model);
+    const model=job.validatedModel||await this.model(job.model);
     validateInput(job.input,model.schema);
     job.version=model.version;
     const route=model.official?`/models/${model.id}/predictions`:'/predictions';
@@ -105,4 +106,10 @@ export class Providers {
     if(!text)throw new LabError('The model returned no text. Check the selected model and output limits.',502);
     return {completed,text};
   }
+}
+
+function httpsUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:null;}catch{return null;}}
+export function modelMetadata(m){
+ const owner=typeof m.owner==='string'?m.owner:m.owner?.username||m.owner?.name||'';
+ return {id:`${owner}/${m.name}`,name:m.name,owner,description:String(m.description||''),tag:m.visibility||'Model',url:httpsUrl(m.url)||`https://replicate.com/${owner}/${m.name}`,coverImageUrl:httpsUrl(m.cover_image_url),ownerAvatarUrl:httpsUrl(m.owner_avatar_url||m.owner?.avatar_url),runCount:Number.isSafeInteger(m.run_count)?m.run_count:null,updatedAt:m.latest_version?.created_at||null,licenseUrl:httpsUrl(m.license_url),paperUrl:httpsUrl(m.paper_url),githubUrl:httpsUrl(m.github_url),tags:Array.isArray(m.metadata?.tags)?m.metadata.tags.filter(x=>typeof x==='string').slice(0,12):[]};
 }

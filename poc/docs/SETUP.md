@@ -1,12 +1,14 @@
 # Third Railify Lab — complete setup
 
-Prepared 10 September 2026. This guide concerns the downloadable local POC, not an already hosted service.
+Updated 11 September 2026 for 0.3.0-poc. This guide concerns the downloadable local POC, not an already hosted service.
+
+For an existing POC installation, the complete overwrite procedure is in [UPDATE-0.3.md](UPDATE-0.3.md). Existing `.env` and `.data` are kept; the webhook secret remains optional.
 
 ## 1. Put the POC in the correct folder
 
 1. Download the supplied ZIP.
-2. In File Explorer open `X:\GIT\ThirdRailify-Lab`, the empty repository you already created.
-3. Copy/extract the ZIP's **contents** into that directory. Keep its existing `.git` directory. The correct result is `X:\GIT\ThirdRailify-Lab\START-LAB.cmd`.
+2. In File Explorer open `X:\GIT\ThirdRailify-Lab\poc`, where you saved the previous POC. Stop its console with Ctrl+C first.
+3. Copy/extract the ZIP's **contents** into that directory. Merge application files into the existing directory; keep your `.env`, `.data`, assets and repository `.git` directory. None are replaced by this update archive. The correct result is `X:\GIT\ThirdRailify-Lab\poc\START-LAB.cmd`.
 4. Do not paste source files into the Public, Admin or Bot repository.
 5. Double-click **START-LAB.cmd**. It checks Node 22+, opens the browser and runs in its visible console. You do not need `npm install`, a build, PowerShell execution-policy changes or an additional Python environment.
 6. Use `http://127.0.0.1:4317`. Keep the console running; Ctrl+C stops it.
@@ -16,7 +18,7 @@ Your previous machine logs already showed Node installed. If the launcher report
 To launch from your current PowerShell instead of File Explorer, these are the only commands needed:
 
 ```powershell
-Set-Location 'X:\GIT\ThirdRailify-Lab'
+Set-Location 'X:\GIT\ThirdRailify-Lab\poc'
 .\START-LAB.cmd
 ```
 
@@ -24,11 +26,11 @@ Set-Location 'X:\GIT\ThirdRailify-Lab'
 
 1. Click **Try a layout**. This makes a local procedural background; it does not call any AI provider.
 2. Choose **Compose** in the left rail.
-3. Edit the headline, secondary text, badge, colours and output size. Drag the headline on the canvas or use the position controls.
+3. Edit the headline, secondary text, badge, colors and output size. Drag the headline on the canvas or use the position controls.
 4. Use **Fit / no crop** to preserve the entire background; **Fill / crop** is a deliberate alternative.
-5. Click **Save project**, then **Export** to generate a PNG or JPEG. Export also saves a local asset.
+5. Click **Save session**, then **Export** to generate a PNG or JPEG. Export also saves a local asset.
 6. Open **Library** to reopen the project or inspect outputs.
-7. Drag the boundary beside Research desk to resize it, or use its collapse button. A focused resize handle also responds to arrow keys.
+7. Drag the boundary beside Research desk to resize it, or use its collapse button. A focused resize handle responds to arrow keys, Shift+arrow for larger steps, Home/End for minimum/maximum, and double-click to reset. The maximum follows the actual viewport rather than a fixed 560px limit. Collapse the left controls for more available width.
 
 The right AI chat and Google tabs are separate from image generation. Selecting Grok for chat does not switch the image provider, and vice versa.
 
@@ -40,7 +42,7 @@ The right AI chat and Google tabs are separate from image generation. Selecting 
 4. Create a dedicated token named something recognizable, such as **ThirdRailify Lab Local**. Use the token Replicate issues; this is not a random secret you invent yourself.
 5. Copy the token privately. Do not post it in this chat, Git, screenshots or a shared document.
 6. In the Lab click **Connections**. Paste it into **Replicate API token**.
-7. Click **Save connections**. The local server writes `REPLICATE_API_TOKEN` into `X:\GIT\ThirdRailify-Lab\.env`. You do not have to edit `.env` manually or set Windows user environment variables.
+7. Click **Save connections**. The local server writes `REPLICATE_API_TOKEN` into `X:\GIT\ThirdRailify-Lab\poc\.env`. You do not have to edit `.env` manually or set Windows user environment variables.
 8. Click the Replicate **Test** action. This authenticates against the account endpoint; it does not create a prediction.
 
 An authentication test is not a guarantee that every paid/private model is available to the account. Model access, billing and input validity are checked on real requests. Reference: [Replicate token documentation](https://replicate.com/docs/topics/security/api-tokens).
@@ -51,15 +53,15 @@ An authentication test is not a guarantee that every paid/private model is avail
 2. Open the model picker. Start with **FLUX.1 Schnell** for a simple text-to-image test, or load another compatible model.
 3. Click **Load model controls** if the controls are not loaded yet. The Lab requests the model's actual input schema; it does not use a made-up common settings list.
 4. Set an aspect ratio using the fields actually supported by that model. Set a single output for your first test where the model offers an output-count field.
-5. Enter a harmless test prompt, for example a moody gold-lit recording desk with room for a headline.
-6. Review the chosen model's external page/pricing. Click **Generate** once. This submits a billable provider request.
+5. For a text model, enter a prompt. For an input-only model, attach its required images/other inputs instead; the central workspace exposes **Run model** and does not require unrelated text.
+6. Review the chosen model's external page/pricing. Click **Generate** or **Run model** once, as appropriate. This submits a billable provider request.
 7. Watch the real queued/starting/processing/saving states. There is no invented percentage counter.
 8. When successful, inspect the image and use **Compose thumbnail** or download the original.
 9. Keep the server open while it downloads the output to `.data/assets`.
 
 The picker supports named-model search and pasting an exact Replicate model URL or `owner/model` reference. Explicit `owner/model:64-character-version` references are supported. Search results are not a promise that every returned model is an image model supported by this prototype. Verify its purpose and license on the provider page.
 
-Common enums, numbers, booleans, text and JSON fields come from the schema. Compatible image URI fields offer local reference upload; larger/specialized nested input schemas may need **Advanced input JSON**. Reference uploads are included only when you submit Generate. They are not automatically sent to an unrelated provider.
+Common enums, numbers, booleans, text and JSON fields come from the schema. Compatible image URI fields offer local reference upload and thumbnail previews; larger/specialized nested input schemas may need **Advanced input JSON**. Reference uploads are included only when you submit Generate. They are not automatically sent to an unrelated provider.
 
 Current limits: two running jobs, six queued/running jobs total, up to eight extracted output file URLs, 32 MB per saved provider image. The UI does not compute a guaranteed cross-model price. No generation-POST retry occurs automatically after an uncertain network response.
 
@@ -88,7 +90,7 @@ Do not delete `.data` to troubleshoot without backing it up. Imported images, pr
 5. Click **Test** to verify model-list authentication. Account permissions can still prevent a selected model from running.
 6. Select **GPT** in the image-provider selector and generate an image, or select **GPT / OpenAI** in the chat sidebar and send a message.
 
-Defaults from the current official documentation are `gpt-image-2.5-sunburst` for images and `gpt-6-astra` for chat. The model IDs are editable in Connections because availability varies by account and changes over time. An account lacking access should select a documented model it can actually use, not a fabricated alias.
+The image and chat model dropdowns populate from the OpenAI catalog available to your API key. Refresh reloads that list; no manual model-name entry is required. Connections uses the same catalogs for optional saved defaults. The list supplies IDs rather than complete endpoint capabilities, so specialized models/options may still return a compatibility or access error on submission. Reference: [list models](https://developers.openai.com/api/reference/resources/models/methods/list).
 
 The direct image adapter uses the Images API. Chat uses the Responses API and streams response text. The POC does not request hidden reasoning or claim live web search. Direct OpenAI image editing is not included yet; use a compatible Replicate reference-image model for that workflow.
 
@@ -102,7 +104,7 @@ Official references: [quickstart](https://developers.openai.com/api/docs/quickst
 4. Paste it into **Connections → Grok / SpaceXAI API key** and save.
 5. Click **Test**, then choose **Grok** for images or the chat provider.
 
-Current documented defaults are `grok-imagine-image-2.0` for images and `grok-4.6` for chat. Grok 4.6 access may depend on your account. Change the model ID in Connections to an accessible, documented alternative when needed.
+Image and chat models populate independently from Grok's typed provider catalogs. Use their dropdowns and refresh icons; the app does not require you to guess IDs. Existing saved .env choices are preserved as preferences, not treated as a guarantee of access. Reference: [model catalogs](https://docs.x.ai/developers/rest-api-reference/inference/models).
 
 Image generation uses the direct SpaceXAI image endpoint, not the Replicate token. The returned base64 image is saved locally. Chat and image keys are the same provider key but the two provider selections are independent.
 
@@ -159,13 +161,30 @@ The tab currently accepts a query and opens Google Images in a new browser tab. 
 
 Google states that Custom Search JSON API is closed to new customers and that existing-customer service ends on 1 January 2027. Do not spend time creating a new project around an assumed available legacy API. An embedded image-search feed needs a separately approved available search integration later. No Google key is needed for the POC's external link. See [Google's current notice](https://developers.google.com/custom-search/v1/overview).
 
-## 11. Fonts and network behaviour
+## 11. Fonts, logo and network behavior
 
-The Lab looks read-only in the sibling `X:\GIT\ThirdRailify` checkout for the existing American Captain, Blinker and Geist Mono files. When found they are used without copying them into this package. No font binaries are distributed.
+The nested `/poc` installation reads your existing named assets from `poc/assets`,
+then the Lab repository's root `assets`, then the sibling Public and Admin
+`assets` directories. It never edits those files or recursively reads unrelated
+repository files.
 
-Fallback typography comes from external Google Fonts CSS when reachable, then system fonts. Font-loading requests do not contain provider credentials. The screenshots accompanying this package use available substitute fonts for visual review; your installed brand fonts determine exact typography locally.
+Put the intended logo at `X:\GIT\ThirdRailify-Lab\assets\logos\labs0.svg`
+(or the same path under `poc/assets`). The motif uses the Public site's gold
+mask and mouse-hover treatment inside the identical 42px rounded-square shell.
+If it is absent the POC shows LAB rather than inventing a different motif.
 
-Actual generation transmits the submitted prompt/reference inputs to the chosen provider. Chat sends the current conversation to its selected chat provider. Local-only means the app runs on your machine, **not that cloud AI computation happens offline**.
+The heading is `assets/fonts/headings/American Captain.ttf` or `.otf`. Both
+extensions work, including from the Lab root one level above `/poc`. Blinker and
+Geist Mono use the existing body/monospace paths. Open Connections and scroll to
+Local brand assets to see the exact files selected. Restart after adding files.
+
+No font binaries are distributed. Exact glyph appearance requires your local
+files. Captured review images in this build environment use fallback fonts and a
+LAB mark because those user-local files were not available here.
+
+Actual generation sends prompts/reference inputs to the selected provider. Chat
+sends the current conversation to its selected provider. Local app execution does
+not mean cloud AI computation happens offline.
 
 ## 12. Common issues
 
@@ -177,7 +196,7 @@ Actual generation transmits the submitted prompt/reference inputs to the chosen 
 
 **401 / 402 / 403 / 429:** inspect the displayed provider explanation for invalid credentials, billing, access or rate limits. Do not repeatedly mash Generate. A model-list test does not prove generation entitlement.
 
-**Model not found:** edit the model identifier in Connections or the Replicate picker to one available to your account. Do not change production project keys to fix a POC model selection.
+**Model not found:** use the refresh button next to the image/chat model dropdown and select a model actually returned by the provider. GPT/Grok model fields are no longer manually typed. Model availability and specialized endpoint compatibility still depend on your account/provider.
 
 **Uncertain/interrupted generation:** check the provider dashboard before resubmitting. Direct image cancellation is not guaranteed after submission, and stopping the local server does not guarantee provider billing stops.
 
@@ -185,6 +204,49 @@ Actual generation transmits the submitted prompt/reference inputs to the chosen 
 
 **Browser refuses the local URL:** check the browser's administrator/enterprise policies or another permitted local browser. The app does not modify security policy automatically.
 
-**Chat knows no current facts:** no web research tool is wired in this POC. Treat it as prompt-writing/general conversation, not verified browsing. Provider histories stay separate and can be cleared with New chat.
+**Chat knows no current facts:** no web research tool is wired in this POC. Treat it as prompt-writing/general conversation, not verified browsing. Provider histories stay separate. New chat archives the current conversation; the trash button deletes the current one and History manages archived chats.
 
 **Ready for Cloudflare?** Not yet. The protected hosted backend, account integration and approvals must be implemented before `lab.thirdrailify.com` is exposed. See [FUTURE-INTEGRATION](FUTURE-INTEGRATION.md).
+
+## 13. New POC 0.2 controls
+
+Select GPT or Grok and use the new model dropdown directly in the image controls.
+The Research AI chat tab has its own independent model dropdown. Refresh re-reads
+the provider catalog. The server never lists invented available model names;
+OpenAI compatibility is inferred from returned model-ID families because the
+model-list API does not supply full endpoint capabilities. Grok's typed lists
+supply image/text classification. Connections also uses these lists for saved
+default selections. No new key or webhook is required for this change.
+
+Library now has Delete controls beside saved sessions, images and completed job
+history. The project rail provides New and Close/Discard controls. Deleting a session keeps
+its assets; an asset in use by another saved session cannot be deleted. Deleting
+local records does not delete provider-side records or downloads elsewhere.
+
+The left rail's top button collapses the controls into an icon rail. Drag the
+research divider to a much wider width or use its keyboard shortcuts. Research
+header buttons open a dedicated window or tab; the detached view retains chat
+history, provider and draft, with a Dock action to return. Popup blocking has a
+separate new-tab alternative.
+
+The header account widget is a design scaffold with no login/authentication gate.
+It does not reuse or impersonate a real Admin account. Keep the POC loopback-only.
+
+
+## 17. Shared project workflow in 0.3
+
+Use the document rail beneath the header for New, Save, conversation History,
+Delete conversation, New conversation and pin/auto-hide. Studio and Research share
+the active project. Save includes reference images and a research snapshot;
+unsaved open tabs also use browser localStorage. Closing the final tab opens the
+full Library. Create/Compose are available again after New project or opening a
+saved project. The Settings page is independent of open projects.
+
+Replicate inputs preview local uploads and safe HTTPS images. A model without a
+text-prompt input uses the central Run model action. Creative-direction settings
+open the preset lightbox. Both left/right panel boundaries are adjustable; the
+left boundary is intentionally more constrained. The header layout menu and the
+collapsible Research model controls expose the remaining layout options.
+
+The complete release contains all original supporting styles/modules plus the
+new workspace files. No additional individual-file downloads are needed.

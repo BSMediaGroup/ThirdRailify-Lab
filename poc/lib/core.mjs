@@ -9,8 +9,9 @@ export class LabError extends Error {
 }
 export const DEFAULTS = {
   REPLICATE_API_TOKEN:'', OPENAI_API_KEY:'', XAI_API_KEY:'',
-  OPENAI_IMAGE_MODEL:'gpt-image-2.5-sunburst', OPENAI_CHAT_MODEL:'gpt-6-astra',
-  XAI_IMAGE_MODEL:'grok-imagine-image-2.0', XAI_CHAT_MODEL:'grok-4.6',
+  // Optional saved preferences only. Model choices come from provider catalogues.
+  OPENAI_IMAGE_MODEL:'', OPENAI_CHAT_MODEL:'',
+  XAI_IMAGE_MODEL:'', XAI_CHAT_MODEL:'',
   REPLICATE_WEBHOOK_SIGNING_SECRET:'', PORT:'4317'
 };
 export const SECRET_KEYS = ['REPLICATE_API_TOKEN','OPENAI_API_KEY','XAI_API_KEY','REPLICATE_WEBHOOK_SIGNING_SECRET'];
@@ -112,7 +113,7 @@ export function normalizeInputSchema(doc){
 export function validateInput(input,schema){
   if(!input||Array.isArray(input)||typeof input!=='object')throw new LabError('Model inputs must be a JSON object.');
   const props=schema.properties||{},required=new Set(schema.required||[]),errors=[];
-  for(const k of required){if(input[k]===undefined||input[k]===null||input[k]==='')errors.push(k+' is required');}
+  for(const k of required){if(input[k]===undefined||input[k]===null||input[k]===''||Array.isArray(input[k])&&!input[k].length)errors.push(k+' is required');}
   for(const [k,v] of Object.entries(input)){
     const p=props[k];
     if(['__proto__','constructor','prototype'].includes(k))throw new LabError('Invalid input field.');
@@ -128,6 +129,14 @@ export function validateInput(input,schema){
     if(typeof v==='number'&&p.minimum!==undefined&&v<p.minimum)errors.push(k+' minimum is '+p.minimum);
     if(typeof v==='number'&&p.maximum!==undefined&&v>p.maximum)errors.push(k+' maximum is '+p.maximum);
     if(typeof v==='string'&&p.maxLength&&v.length>p.maxLength)errors.push(k+' is too long');
+    if(typeof v==='string'&&p.minLength&&v.length<p.minLength)errors.push(k+' is too short');
+    if(Array.isArray(v)&&p.minItems!==undefined&&v.length<p.minItems)errors.push(k+' needs at least '+p.minItems+' items');
+    if(Array.isArray(v)&&p.maxItems!==undefined&&v.length>p.maxItems)errors.push(k+' accepts at most '+p.maxItems+' items');
+    const uriValues=p.type==='array'&&p.items?.format==='uri'&&Array.isArray(v)?v:p.format==='uri'?[v]:[];
+    for(const uri of uriValues){if(typeof uri!=='string'){errors.push(k+' must contain a valid image/file URL');continue;}
+      if(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+$/.test(uri))continue;
+      try{const u=new URL(uri);if(u.protocol!=='https:'||u.username||u.password)throw new Error();}catch{errors.push(k+' needs an HTTPS URL or an uploaded image');}
+    }
   }
   if(errors.length)throw new LabError(errors.join('; '),422,'model_input_invalid');
   return input;

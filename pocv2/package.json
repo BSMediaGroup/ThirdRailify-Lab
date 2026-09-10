@@ -1,0 +1,15 @@
+{
+  "name": "thirdrailify-lab-local-poc",
+  "version": "0.2.0-poc",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs --open",
+    "test": "node --test",
+    "check": "node --check server.mjs && node --check public/app.js"
+  },
+  "description": "Loopback-only image generation and thumbnail workshop. No installation or build dependencies."
+}

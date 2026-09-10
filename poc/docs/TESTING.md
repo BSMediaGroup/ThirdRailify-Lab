@@ -1,51 +1,66 @@
-# POC validation record
+# POC 0.3 release validation
 
-## Runtime and automated tests
+## Current automated suite
 
-Executed with Node **22.16.0** in the build environment. Final automated result: **13 tests passed, zero failed**. JavaScript syntax checks passed.
+Node 22.16.0; `node --test`: **39 tests passed, zero failures**. This retains the
+26 prior server/model/catalog/config tests and adds 13 workspace/schema tests.
+Syntax checks cover server.mjs, all lib modules, public/app.js, public/model-schema.js
+and the package verification script. The runtime has no install/build dependency.
 
-Commands:
+The workspace tests cover prompt-free two-image generation with the real local
+HTTP API, schema-required prompts, optional defaults, rejected unknown/missing
+inputs before submission, retained job/session identity, uploaded reference-asset
+materialization, saved-project reference protection, restart persistence, safe
+metadata/preview values, required image arrays, preset persistence, legacy
+projects, static routes and Research rendering resources.
 
-```text
-node --check server.mjs
-node --check lib/core.mjs
-node --check lib/providers.mjs
-node --check public/app.js
-node --test
-```
+All provider traffic is simulated/injected. No API keys, real inference charges,
+provider account mutations, live login or hosted webhook were used.
 
-The package uses native Node APIs and has no third-party runtime dependencies.
+## Package checks for this release
 
-Automated coverage includes dotenv parsing/preservation; exact model references and schema normalization; supported image bytes and size checks; exact output-host allowlisting; secret redaction; raw-byte webhook HMAC/timestamps; actual local HTTP server security/config routes; Replicate model lookup/search/prediction polling; local output persistence; concurrent duplicate submissions; project saving; provider-specific image request bodies; uncertain POST handling without automatic retries; and actual SSE text forwarding without invented reasoning.
+The completed ZIP is extracted into a fresh directory, its full manifest is
+verified, the 39-test suite is rerun there, and the actual extracted server is
+started with external provider requests disabled. The smoke check loads the
+main shell, Research route, all three stylesheets, both browser scripts, and the
+SVG icon resource with their expected content types. It verifies that the new
+workspace controls are present and that private configuration paths are not
+served. All required unchanged 0.2 runtime files are included, not assumed to
+exist on the user's machine.
 
-These tests inject simulated provider HTTP responses into the **real server/adapters**. They do not require tokens, access a paid provider, or consume credit. Test credential strings are synthetic. Temporary data is removed after tests.
+A second installation check overlays the same ZIP onto an extracted 0.2 package
+with synthetic existing .env, .data/state.json, a saved project/image, user asset
+and repository-marker files. Protected file hashes are compared before/after the
+overlay and after read-only server smoke checks. The old saved project and image
+are read back through the current API. The prior individual-file 0.3 handoff is
+not needed to install this release.
 
-## Browser/UI validation
+Archive checks reject .env, .data, .git, user assets, font binaries, dependency
+folders, symlinks and unsafe paths. PACKAGE-MANIFEST.json records the length and
+SHA-256 of every other included file. The manifest itself is not self-hashed.
+The release contains CRLF Windows launchers and no npm-based launch requirement.
 
-The environment's installed Chromium has an administrator URL-block policy that prevents ordinary navigation, including localhost. No browser/system policies were changed.
+## UI evidence retained from the workspace implementation
 
-Browser testing therefore loaded the actual HTML/CSS/JavaScript into a Playwright page, with a test bridge sending browser API calls to the **real running localhost Node server**. Asset responses were rendered through test-only data URLs, and existing system fonts were substituted in memory because font networking was also blocked. None of those harness changes are part of the distributed application.
+The preceding workspace implementation reported browser checks at 1920, 1440,
+768 and 390 pixels for shared tabs/research, generating while switching projects,
+saving/reopening/discarding, final-tab Library fallback, layout menu, overlay
+auto-hide, panel resizing, collapsible model controls and model-specific inputs.
+It used actual HTML/CSS/JS with a local HTTP bridge because the managed Chromium
+runtime blocks ordinary navigation. Prior visual captures used font fallbacks
+and a missing-logo placeholder; the user's actual fonts/SVG were not supplied.
 
-Verified in that environment:
-- no page JavaScript exceptions during the exercised workflow;
-- settings open/Escape close;
-- local authored layout import;
-- thumbnail title editing and Canvas composition;
-- real project persistence and export-image persistence through the server;
-- library/model-picker rendering;
-- Google Images external-link construction;
-- sidebar collapse, keyboard resizing and pointer-drag resizing;
-- 1440, 768 and 390px layout containment;
-- desktop image-workspace, composer and mobile screenshots visually inspected.
+Those historical browser checks are not a claim of paid live model testing or
+native Windows navigation. The final packaging pass is specifically a fresh-ZIP,
+overwrite-preservation, static-resource and automated-regression verification.
+Windows .cmd execution on a Windows machine, native popup/tab navigation and
+user-account paid API acceptance remain unverified in this Linux environment.
 
-Normal headed navigation in the user's Windows browser, exact local Third Railify fonts, an actual browser download dialog, and a real billable image generation have **not** been observed here. Exported file bytes were saved through the actual server. This is not a claim of full Windows or live-provider acceptance.
+The previous version's detailed historical test record is in TESTING-0.2.md.
 
-## What Daniel should verify first
+## Reproduce without changing your data
 
-Launch `START-LAB.cmd`, use Try a layout, save/reopen a thumbnail and export it. Then save/test the Replicate token and make one low-risk generation with a single output. Confirm the provider reports success and the resulting original still opens from Library after the Lab is restarted.
-
-Try optional GPT/Grok generation and chat only with models available to the corresponding API account. The documented defaults are configurable, not a guarantee of entitlement.
-
-## No deployment
-
-No changes were made to any user repository, production Cloudflare project, DNS, account database, Bot process or provider account during creation of this downloadable package. There is no production login implementation yet.
+RUN-TESTS.cmd runs the automated tests in temporary fixture directories; they do
+not load the installation's real .env/.data. VERIFY-PACKAGE.cmd checks release
+files only and does not change the application, private data or provider state.
+Both scripts call Node directly. Running tests/checks is optional for using the POC.
