@@ -59,14 +59,15 @@
 .usage-table th,.usage-table td { padding: 9px; border-bottom: 1px solid #ffffff12; text-align: left; }
 .usage-table small { display: block; color: #918895; }
 
-/* Model Explorer: editorial, square-first media presentation. */
+/* Model Explorer: square catalogue cards with a compact detail preview. */
 #modelsDialog.wide-dialog { width: min(1120px,calc(100vw - 32px)); overflow: hidden; }
 #modelsDialog .dialog-body { max-height: calc(90dvh - 102px); }
 #modelsDialog .model-results { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
 .model-result { display: grid; grid-template-columns: minmax(150px,42%) minmax(0,1fr); padding: 0; overflow: hidden; border: 1px solid #43384b; border-radius: 14px; background: linear-gradient(145deg,#19131f,#100d14 70%); box-shadow: 0 14px 36px #0005,inset 0 1px 0 #ffffff08; transition: transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
 .model-result:hover { transform: translateY(-2px); border-color: #826793; background: linear-gradient(145deg,#211829,#120e17 70%); box-shadow: 0 20px 48px #0008,0 0 0 1px #8b65a322; }
 .model-result:focus-visible { outline: 2px solid #f0c959; outline-offset: 3px; }
-.model-result-visual,.model-info-visual { position: relative; isolation: isolate; display: block; width: 100%; aspect-ratio: 1; overflow: hidden; background: #0d0911; }
+.model-result-visual,.model-info-visual { position: relative; isolation: isolate; display: block; width: 100%; overflow: hidden; background: #0d0911; }
+.model-result-visual { aspect-ratio: 1; }
 .model-result .model-cover,.model-info-panel .model-cover { position: absolute; z-index: 1; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; margin: 0; border: 0; border-radius: 0; background: transparent; transition: transform .28s ease,filter .28s ease; }
 .model-result:hover .model-cover { transform: scale(1.035); filter: saturate(1.06) contrast(1.02); }
 .model-result .model-cover-empty,.model-info-panel .model-cover-empty { position: absolute; inset: 0; display: grid; height: auto; place-content: center; gap: 9px; overflow: hidden; color: #f7d873; background: radial-gradient(circle at 24% 16%,#7f4ca066,transparent 36%),radial-gradient(circle at 82% 85%,#d8a9392b,transparent 34%),linear-gradient(145deg,#291b34,#120e18 62%,#0c0a0f); }
@@ -86,8 +87,10 @@
 .model-result .model-stats { margin-top: 11px; color: #b99f68; }
 
 .model-info-panel { width: min(430px,calc(100vw - 24px)); max-height: min(780px,calc(100dvh - 24px)); padding: 0; overflow: auto; border: 1px solid #675372; border-radius: 16px; background: #120e17; box-shadow: 0 28px 85px #000e,0 0 0 1px #ffffff0a; }
-.model-info-panel .model-info-visual { border-bottom: 1px solid #4a3b53; }
-.model-info-panel .model-info-copy { padding: 21px; }
+.model-info-panel .model-info-visual { width: calc(100% - 32px); height: 132px; margin: 16px 16px 0; border: 1px solid #4a3b53; border-radius: 10px; box-shadow: inset 0 1px 0 #ffffff0a; }
+.model-info-panel .model-info-visual::after { position: absolute; z-index: 1; content: ""; inset: 0; pointer-events: none; background: linear-gradient(180deg,transparent 50%,#0d091199); }
+.model-info-panel .model-cover { filter: saturate(.86) brightness(.88); }
+.model-info-panel .model-info-copy { padding: 18px 21px 21px; }
 .model-info-panel .eyebrow { color: #d1ad54; letter-spacing: .14em; }
 .model-info-panel h3 { margin: 7px 0 8px; color: #f4edf5; font-size: 34px; line-height: .95; }
 .model-info-panel .micro { color: #b6a8bc; }
@@ -119,7 +122,8 @@
   .model-fallback-mark { width: 46px; height: 46px; border-radius: 13px; font-size: 21px; }
   .model-fallback-label { font-size: 6px; }
   .model-visual-source { left: 7px; bottom: 7px; padding: 4px 6px; font-size: 6px; }
-  .model-info-panel .model-info-copy { padding: 17px; }
+  .model-info-panel .model-info-visual { width: calc(100% - 24px); height: 110px; margin: 12px 12px 0; }
+  .model-info-panel .model-info-copy { padding: 15px 17px 17px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .key-profile-scaffold > summary,.settings-models > summary,.disclosure-chevron .icon,.model-result,.model-result .model-cover { transition: none; }

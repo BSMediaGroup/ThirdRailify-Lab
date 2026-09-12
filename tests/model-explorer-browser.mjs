@@ -53,9 +53,11 @@ try{
     const info=page.locator('#modelInfoPanel');
     if(await info.isHidden())await page.locator('#modelInfoChip').evaluate(button=>button.click());
     await info.waitFor({state:'visible'});
-    const infoMedia=await info.locator('.model-info-visual').evaluate(node=>{const rect=node.getBoundingClientRect(),image=node.querySelector('.model-cover');return {ratio:rect.width/rect.height,fit:getComputedStyle(image).objectFit};});
-    assert.ok(Math.abs(infoMedia.ratio-1)<.02,'model detail media canvas is square');
-    assert.equal(infoMedia.fit,'cover','detail image fills its square canvas');
+    const infoMedia=await info.locator('.model-info-visual').evaluate(node=>{const rect=node.getBoundingClientRect(),panel=node.parentElement.getBoundingClientRect(),image=node.querySelector('.model-cover');return {height:rect.height,ratio:rect.width/rect.height,panelShare:rect.height/panel.height,fit:getComputedStyle(image).objectFit};});
+    assert.ok(infoMedia.height<=132,'model detail feature image stays compact');
+    assert.ok(infoMedia.ratio>2.4,'model detail feature image uses a discreet banner crop');
+    assert.ok(infoMedia.panelShare<.32,'model detail feature image never dominates the panel');
+    assert.equal(infoMedia.fit,'cover','detail image cleanly fills its compact canvas');
     await page.screenshot({path:path.join(directory,`details-${width}.png`)});
     assert.deepEqual(errors,[]);
     await context.close();
