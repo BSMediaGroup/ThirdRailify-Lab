@@ -11,3 +11,5 @@ PENDING VER=0.4.0 (new production root)
 - Added private Lab D1/R2 repositories, revision protection, persisted generation jobs, verified Replicate callbacks and an independent recovery-only cron helper.
 - Added real local D1/R2 and compiled Pages-runtime checks. Live release identifiers and acceptance are recorded in `docs/RELEASE.md`.
 - Preserved `poc/.env`, `.data`, projects, assets, launchers and concurrent repository work. No private POC projects were imported.
+
+- Corrected Pages extensionless login routing, canonical OAuth handoff returns and the existing `twitter` provider identifier. Added login-route regression coverage and an explicit Admin checkout override for isolated-release tests.

@@ -1,6 +1,6 @@
 # Workshop Pages release evidence
 
-Status: release validation in progress; no live acceptance claim until the entries below are recorded.
+Status: Pages Git deployments succeeded. Stable Lab hostname is active on Pages; authenticated/paid acceptance remains pending.
 
 ## Resources and schema
 
@@ -29,3 +29,13 @@ Use the prior compatible Pages deployment for a frontend/auth rollback. Disable 
 Back up Lab D1 before later migrations and retain R2 originals during rollback. Unknown external acceptance requires reconciliation against a known provider prediction/callback; it is never a reason for automatic paid resubmission. Provider-file cleanup failures remain recorded for retry; unknown file-upload acceptance is operationally uncertain rather than claimed deleted.
 
 Official contracts: [Pages Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/), [Pages Functions routing](https://developers.cloudflare.com/pages/functions/routing/), [Replicate webhook verification](https://replicate.com/docs/topics/webhooks/verify-webhook), [xAI tool usage and turn limits](https://docs.x.ai/developers/tools/tool-usage-details).
+
+## Deployed releases
+
+- Admin Git release `174939d20e546195078e4a1e181871874bd50452`, deployment `e03f7ba5-ecec-475a-a40e-86d6d0a01c1d`. This layers Workshop over the concurrent, already deployed Commerce snapshot `afd5874d-04b3-453e-9499-dc834938d73e`, recorded separately as `6c0fa25`; live JS/CSS SHA-256 matched that snapshot. Newer unfinished Commerce files were not included.
+- Lab Git release `b10da37cea6237267b345a1fe5f0727fd804a1d6`, Pages deployment `29941276-b10b-4afb-b539-5ebee222dcb9`.
+- Recovery helper version `28c526d8-6ddf-46e5-b586-3b63d408d350`, minute cron, no public URL or hostname. Three provider secrets provisioned, no webhook/auth secrets.
+- Admin account migrations 0002/0003 applied at 2026-09-12 11:24:23 UTC; Lab 0001 at 11:24:35 UTC. Ledgers and foreign-key checks verified afterward.
+- Both stable and immutable Lab pages.dev URLs return 503/no-store as intended. Preview has no production D1/R2/secrets, preview builds disabled, fail_open=false for both environments.
+- Operator saved the proxied CNAME `lab` ? `thirdrailify-lab.pages.dev`. Pages domain `e043d300-5277-4175-acc9-034ab3eb68aa` verified active after validation retry. No apex/www/Admin/mail/nameserver records changed. Anonymous API/app assets and unsigned callbacks return JSON 401 with no-store/security headers. The live Pages extensionless login redirect exposed a gate mismatch, corrected with explicit `/login` bootstrap routing and the canonical `/account/login` OAuth handoff path.
+- Operator Chrome automation received Turnstile 600010, documented by Cloudflare as bot detection. No token/session bypass attempted. Regular-browser operator login remains the valid acceptance path.

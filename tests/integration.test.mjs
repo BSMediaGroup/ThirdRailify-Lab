@@ -8,8 +8,10 @@ import { authorize } from '../lib/auth.mjs';
 import { workshopAccess } from '../lib/workshop-policy.js';
 import { enqueue, receiveWebhook, recover } from '../lib/jobs.mjs';
 import { onRequest } from '../functions/_middleware.js';
-import { onRequest as accessHandler } from '../../ThirdRailify-Admin/functions/api/workshop/[[path]].js';
-import { createSession, createHandoff, consumeHandoff } from '../../ThirdRailify-Admin/functions/_shared/auth-core.js';
+import { pathToFileURL } from 'node:url';
+const adminRoot=process.env.LAB_TEST_ADMIN_ROOT ? pathToFileURL(process.env.LAB_TEST_ADMIN_ROOT.replace(/[\\/]?$/, '/')) : new URL('../../ThirdRailify-Admin/',import.meta.url);
+const {onRequest:accessHandler}=await import(new URL('functions/api/workshop/[[path]].js',adminRoot));
+const {createSession,createHandoff,consumeHandoff}=await import(new URL('functions/_shared/auth-core.js',adminRoot));
 const origin='https://lab.thirdrailify.com',projectA=crypto.randomUUID(),projectB=crypto.randomUUID();
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
 const hash=s=>createHash('sha256').update(s).digest('base64url');
@@ -19,9 +21,9 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
   t.after(()=>mf.dispose());
   const env=await mf.getBindings();Object.assign(env,{LAB_ENABLED:'true',LAB_PAID_ENABLED:'true',LAB_ORIGIN:origin,REPLICATE_API_TOKEN:'local-fixture-token',REPLICATE_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('local-test-signature-key-32-bytes!').toString('base64')});
   await schema(env.LAB_DB,new URL('../migrations/0001_lab.sql',import.meta.url));
-  await schema(env.THIRDRAILIFY_AUTH_DB,new URL('../../ThirdRailify-Admin/migrations/0001_auth_foundation.sql',import.meta.url));
-  await schema(env.THIRDRAILIFY_AUTH_DB,new URL('../../ThirdRailify-Admin/migrations/0002_full_admin_capability_denials.sql',import.meta.url));
-  await schema(env.THIRDRAILIFY_AUTH_DB,new URL('../../ThirdRailify-Admin/migrations/0003_workshop_access.sql',import.meta.url));
+  await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0001_auth_foundation.sql',adminRoot));
+  await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0002_full_admin_capability_denials.sql',adminRoot));
+  await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0003_workshop_access.sql',adminRoot));
   for(const [id,level,status]of [['master1','master','active'],['master2','master','active'],['full','full','active'],['a','none','active'],['b','none','active'],['disabled','none','disabled']])await env.THIRDRAILIFY_AUTH_DB.prepare('INSERT INTO accounts(id,display_name,role,admin_level,status,created_at,updated_at,source) VALUES(?,?,?,?,?,?,?,?)').bind(id,id,level==='none'?'user':'admin',level,status,'2026-01-01','2026-01-01',level==='master'?'env_master':'test').run();
   const auth=owner=>({owner,policy:{canManageProviders:true}});
   async function api(owner,path,body){return apiRoute(env,new Request(origin+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}),auth(owner),{waitUntil(){}});}
@@ -59,6 +61,10 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
     await assert.rejects(api('a','/api/unknown'),/not found/);let served=false;const next=()=>{served=true;return new Response('private');};let r=await onRequest({env:{},request:new Request(origin+'/'),next});assert.equal(r.status,503);assert.equal(served,false);
     r=await onRequest({env,request:new Request('https://immutable.thirdrailify-lab.pages.dev/'),next});assert.equal(r.status,503);assert.equal(served,false);
     r=await onRequest({env,request:new Request(origin+'/app.js'),next});assert.equal(r.status,401);assert.equal(served,false);assert.equal(r.headers.get('X-Frame-Options'),'DENY');
+  });
+  await t.test('Pages canonical login and existing OAuth callback paths reach the login gate',async()=>{
+    for(const path of ['/login','/login.html']){const r=await onRequest({env,request:new Request(origin+path),next:()=>new Response('login fixture')});assert.equal(r.status,200);assert.equal(await r.text(),'login fixture');}
+    const r=await onRequest({env,request:new Request(origin+'/account/login?handoff=single-use-code'),next:()=>{throw new Error('Must not serve protected assets');}});assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login?handoff=single-use-code');
   });
   await t.test('durable import resumes after browser closure, retries downloads without paid resubmission, revocation stops queued work',async()=>{
     await env.LAB_DB.prepare('UPDATE jobs SET lease_until=0 WHERE id=?').bind(job.id).run();
