@@ -78,6 +78,7 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
   });
   await t.test('Pages canonical login and existing OAuth callback paths reach the login gate',async()=>{
     for(const path of ['/login','/login.html']){const r=await onRequest({env,request:new Request(origin+path),next:()=>new Response('login fixture')});assert.equal(r.status,200);assert.equal(await r.text(),'login fixture');}
+    const social=await onRequest({env,request:new Request(origin+'/social/lab-social-card-v1.png'),next:()=>new Response(png,{headers:{'Content-Type':'image/png'}})});assert.equal(social.status,200);assert.equal(social.headers.get('content-type'),'image/png');assert.equal(social.headers.get('cache-control'),'public, max-age=604800, immutable');assert.deepEqual(Buffer.from(await social.arrayBuffer()),png);
     const r=await onRequest({env,request:new Request(origin+'/account/login?handoff=single-use-code'),next:()=>{throw new Error('Must not serve protected assets');}});assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login?handoff=single-use-code');
   });
   await t.test('durable import resumes after browser closure, retries downloads without paid resubmission, revocation stops queued work',async()=>{

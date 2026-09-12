@@ -7,7 +7,7 @@ The private creative Workshop runs on the Git-integrated Cloudflare Pages projec
 Node 22.16.0 / Wrangler 4.60.0. Cloudflare builds from the repository root with `npm run build`, output `dist`. On Windows use `npm.cmd`. `build-assets.json` and the explicit five-source stylesheet list in `scripts/build.mjs` form the complete asset allowlist; `poc/`, environment files, local data, tests, diagnostics and backups are excluded. Every published route invokes Pages Functions. Preview and pages.dev hostnames fail closed; only the configured stable origin is enabled.
 
 ```text
-assets/                  approved fonts and logos (packaged by allowlist)
+assets/                  approved fonts, logos, and social-preview artwork
 public/                  preserved vanilla Studio/Research UI and canonical login client
 public/violet.css        final dark gold/muted-violet theme and responsive image-search layer
 functions/_middleware.js protected Pages application, APIs, media and callbacks
@@ -21,6 +21,10 @@ docs/                    architecture, parity and release evidence
 poc/                     approved local baseline, preserved in place
 dist/                    generated allowlisted build output (ignored)
 ```
+
+## Link previews
+
+Discord, X/Twitter, and other Open Graph clients receive a dedicated 1200×630 dark gold/violet social card plus a concise title and description. Both the authenticated shell and the public login handoff publish the same canonical metadata because anonymous link crawlers follow the root login redirect. `/social/lab-social-card-v1.png` is the only deliberately public social asset; it contains no account, project, or provider data and is packaged by the build allowlist.
 
 ## Identity and private data
 
