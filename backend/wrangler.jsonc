@@ -39,5 +39,22 @@
   },
   "observability": {
     "enabled": true
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "LAB_JOBS",
+        "queue": "thirdrailify-lab-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "thirdrailify-lab-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 0,
+        "max_retries": 100,
+        "max_concurrency": 2
+      }
+    ]
   }
 }

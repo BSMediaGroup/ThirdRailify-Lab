@@ -38,7 +38,18 @@
         "LAB_ORIGIN": "https://preview.invalid"
       },
       "d1_databases": [],
-      "r2_buckets": []
+      "r2_buckets": [],
+      "queues": {
+        "producers": []
+      }
     }
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "LAB_JOBS",
+        "queue": "thirdrailify-lab-jobs"
+      }
+    ]
   }
 }

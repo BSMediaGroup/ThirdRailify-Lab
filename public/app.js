@@ -469,7 +469,7 @@ function showBrandStatus(){
 }
 function closeAccount(){$('accountMenu').hidden=true;$('accountTrigger').setAttribute('aria-expanded','false');}
 on('accountTrigger','click',()=>{const open=$('accountMenu').hidden;$('accountMenu').hidden=!open;$('accountTrigger').setAttribute('aria-expanded',String(open));});
-on('accountConnections','click',()=>{closeAccount();showSettings();});on('accountLibrary','click',()=>{closeAccount();showLibrary();});on('accountLogout','click',async()=>{const button=$('accountLogout');button.disabled=true;button.querySelector('span').textContent='Logging out?';try{await signOut();}finally{button.disabled=false;button.querySelector('span').textContent='Log out';}});
+on('accountConnections','click',()=>{closeAccount();showSettings();});on('accountLibrary','click',()=>{closeAccount();showLibrary();});on('accountLogout','click',async()=>{const button=$('accountLogout');button.disabled=true;button.querySelector('span').textContent='Logging out?';try{await signOut();}finally{button.disabled=false;button.querySelector('span').textContent='Sign out';}});
 document.addEventListener('pointerdown',e=>{if(!$('accountWidget').contains(e.target))closeAccount();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('accountMenu').hidden){closeAccount();$('accountTrigger').focus();}});
 on('accountMenu','keydown',e=>{const items=[...$('accountMenu').querySelectorAll('[role="menuitem"]')];const at=items.indexOf(document.activeElement);let index;if(e.key==='ArrowDown')index=(at+1)%items.length;if(e.key==='ArrowUp')index=(at-1+items.length)%items.length;if(e.key==='Home')index=0;if(e.key==='End')index=items.length-1;if(index!==undefined){e.preventDefault();items[index].focus();}});
@@ -764,4 +764,10 @@ function setupFinalUI(){
  window.addEventListener('storage',e=>{if(e.key===attachmentDraftKey())renderChatAttachmentTray();});
 }
 
-boot().catch(e=>{$('serverStatus').textContent='Local server unavailable';error('Start START-LAB.cmd and open the local address. '+e.message);});
+function reportRender(late=false){
+ if(!state.config?.canManageProviders)return;
+ const style=(selector,pseudo)=>getComputedStyle(document.querySelector(selector),pseudo);
+ const values={border:style('.stage-shell').borderColor,logo:style('#brandMark','::before').backgroundImage,scheme:style('html').colorScheme,button:style('#generate').backgroundColor,stylesheet:[...document.styleSheets].some(s=>s.href&&new URL(s.href).pathname==='/lab.css'),darkReader:!!document.querySelector('style.darkreader,[data-darkreader-mode]'),forcedColors:matchMedia('(forced-colors: active)').matches,late};
+ api('/api/render-check',{method:'POST',body:values}).catch(()=>{});
+}
+boot().then(()=>{reportRender();setTimeout(()=>reportRender(true),2500);}).catch(e=>{$('serverStatus').textContent='Workshop unavailable';error('The Workshop could not finish loading. '+e.message);});

@@ -7,6 +7,7 @@ import { apiRoute } from '../lib/api.mjs';
 import { authorize, proxyAuth } from '../lib/auth.mjs';
 import { workshopAccess } from '../lib/workshop-policy.js';
 import { enqueue, receiveWebhook, recover } from '../lib/jobs.mjs';
+import { consume } from '../backend/queue.mjs';
 import { onRequest } from '../functions/_middleware.js';
 import { pathToFileURL } from 'node:url';
 const adminRoot=process.env.LAB_TEST_ADMIN_ROOT ? pathToFileURL(process.env.LAB_TEST_ADMIN_ROOT.replace(/[\\/]?$/, '/')) : new URL('../../ThirdRailify-Admin/',import.meta.url);
@@ -20,7 +21,7 @@ async function schema(db,path){const source=(await readFile(path,'utf8')).replac
 test('real local D1/R2: authority, revisions, isolation, webhook, recovery and fail-closed routes',async t=>{
   const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-01-20',d1Databases:['LAB_DB','THIRDRAILIFY_AUTH_DB'],r2Buckets:['LAB_FILES']});
   t.after(()=>mf.dispose());
-  const env=await mf.getBindings();Object.assign(env,{LAB_ENABLED:'true',LAB_PAID_ENABLED:'true',LAB_ORIGIN:origin,REPLICATE_API_TOKEN:'local-fixture-token',REPLICATE_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('local-test-signature-key-32-bytes!').toString('base64')});
+  const env=await mf.getBindings();env.LAB_JOBS={async send(){}};Object.assign(env,{LAB_ENABLED:'true',LAB_PAID_ENABLED:'true',LAB_ORIGIN:origin,REPLICATE_API_TOKEN:'local-fixture-token',REPLICATE_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('local-test-signature-key-32-bytes!').toString('base64')});
   await schema(env.LAB_DB,new URL('../migrations/0001_lab.sql',import.meta.url));
   await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0001_auth_foundation.sql',adminRoot));
   await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0002_full_admin_capability_denials.sql',adminRoot));
@@ -76,6 +77,20 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
     const original=JSON.parse(row.assets)[0];assert.deepEqual(Buffer.from(await(await api('a',original.url)).arrayBuffer()),png);
     await env.LAB_DB.prepare("UPDATE jobs SET status='queued' WHERE id=?").bind(job.id).run();await env.THIRDRAILIFY_AUTH_DB.prepare("UPDATE workshop_access SET state='revoked' WHERE account_id='a'").run();await recover(env,provider);assert.equal((await env.LAB_DB.prepare('SELECT status FROM jobs WHERE id=?').bind(job.id).first()).status,'canceled');assert.equal(submissions,0);await env.THIRDRAILIFY_AUTH_DB.prepare("UPDATE workshop_access SET state='granted' WHERE account_id='a'").run();
     await env.LAB_DB.prepare("UPDATE jobs SET status='submitting',lease_until=0 WHERE id=?").bind(job.id).run();await recover(env,provider);assert.equal((await env.LAB_DB.prepare('SELECT status FROM jobs WHERE id=?').bind(job.id).first()).status,'submission_uncertain');assert.equal(submissions,0);
+  });
+  await t.test('queue dispatch is awaited; redelivery never repurchases; failed dispatch is visible and missing bindings fail closed',async()=>{
+    const messages=[];env.LAB_JOBS={async send(body){messages.push(body);}};
+    let purchases=0;
+    const provider={key(){},async directImage(){purchases++;return {data:[{b64_json:png.toString('base64')}],usage:{}};},async request(){throw new Error('No provider cleanup expected');}};
+    const input={projectId:projectA,provider:'openai',model:'fixture-image',prompt:'Controlled fixture',requestId:crypto.randomUUID()};
+    const job=await enqueue(env,auth('a'),input,provider);assert.deepEqual(messages,[{jobId:job.id}]);
+    let acknowledgments=0;const batch={messages:[{body:{jobId:job.id},attempts:1,ack(){acknowledgments++;},retry(){throw new Error('Completed job should be acknowledged');}}]};
+    await consume(batch,env,provider);await consume(batch,env,provider);assert.equal(purchases,1);assert.equal(acknowledgments,2);
+    const row=await env.LAB_DB.prepare('SELECT status FROM jobs WHERE id=?').bind(job.id).first();assert.equal(row.status,'succeeded');
+    env.LAB_JOBS={async send(){throw new Error('Queue unavailable');}};
+    const failed=await enqueue(env,auth('a'),{...input,requestId:crypto.randomUUID()},provider);assert.equal(failed.status,'failed');assert.match(failed.phase,/dispatch failed/);
+    delete env.LAB_JOBS;await assert.rejects(enqueue(env,auth('a'),{...input,requestId:crypto.randomUUID()},provider),/processor is unavailable/);assert.equal(purchases,1);
+    env.LAB_JOBS={async send(){}};
   });
   await t.test('Admin grants audited atomically, CAS race rejected, delegation and Master recovery protected; target-bound handoff single use',async()=>{
     Object.assign(env,{THIRDRAILIFY_AUTH_RATE_LIMIT_SECRET:'fixture-only-secret',THIRDRAILIFY_ADMIN_ORIGIN:'https://admin.thirdrailify.com',THIRDRAILIFY_LAB_ORIGIN:origin});
