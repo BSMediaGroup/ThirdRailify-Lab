@@ -617,7 +617,7 @@ function renderWorkflow(){
     $('emptyStage').querySelector('h2').innerHTML='YOUR RESULT.<br><span>RIGHT HERE.</span>';$('emptyStage').querySelector('p').textContent='Prepare the model inputs, then generate. Your original result will appear here.';
   }else{$('emptyStage').querySelector('h2').innerHTML='A BLANK CANVAS.<br><span>ENDLESS DIRECTIONS.</span>';$('emptyStage').querySelector('p').textContent='Write a prompt. Choose your model. Give your next idea somewhere to land.';}
   let missing=[];if(state.provider==='replicate'&&state.model)try{const input=preparePrompt(collectInputs(),state.model,w.hasPrompt?$('prompt').value:undefined);missing=missingInputs(input,state.model.schema);}catch{}
-  $('generate').innerHTML=icon(inputOnly?'arrow':'sparkles')+(inputOnly?'Run model':'Generate')+' '+icon('arrow');$('generate').disabled=!state.activeSessionId||state.inputBusy>0||pendingGenerations.has(state.activeSessionId);$('contextRun').disabled=$('generate').disabled;
+  $('generate').innerHTML=icon(inputOnly?'arrow':'sparkles')+(inputOnly?'Run model':'Generate');$('generate').disabled=!state.activeSessionId||state.inputBusy>0||pendingGenerations.has(state.activeSessionId);$('contextRun').disabled=$('generate').disabled;
   $('generate').title=state.inputBusy?'Saving input images…':missing.length?'Required: '+missing.join(', '):'Submit generation once';
 }
 on('advancedJson','input',()=>{captureSession();renderWorkflow();});

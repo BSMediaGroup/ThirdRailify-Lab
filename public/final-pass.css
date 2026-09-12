@@ -21,3 +21,6 @@
 
 /* Canonical Admin sign-out treatment. */
 .admin-account__actions .admin-account__logout{color:#e9b0a4;font-weight:600;border-top:1px solid var(--line);margin-top:2px}.admin-account__actions .admin-account__logout svg{color:#f28d75}.admin-account__actions .admin-account__logout:hover,.admin-account__actions .admin-account__logout:focus-visible{background:rgba(242,141,117,.08);color:#ffd8cf}.admin-account__actions .admin-account__logout:disabled{opacity:.6;cursor:wait}
+
+/* Keep reference attachment and submission together as the prompt area resizes. */
+.prompt-bottom{flex-wrap:wrap}.prompt-bottom>.helper{flex:1 1 180px;max-width:none}.prompt-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;margin-left:auto}.prompt-actions .generate{margin-left:0}
