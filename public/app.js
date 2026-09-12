@@ -469,7 +469,7 @@ function showBrandStatus(){
 }
 function closeAccount(){$('accountMenu').hidden=true;$('accountTrigger').setAttribute('aria-expanded','false');}
 on('accountTrigger','click',()=>{const open=$('accountMenu').hidden;$('accountMenu').hidden=!open;$('accountTrigger').setAttribute('aria-expanded',String(open));});
-on('accountConnections','click',()=>{closeAccount();showSettings();});on('accountLibrary','click',()=>{closeAccount();showLibrary();});on('accountLogout','click',async()=>{const button=$('accountLogout');button.disabled=true;button.querySelector('span').textContent='Logging out?';try{await signOut();}finally{button.disabled=false;button.querySelector('span').textContent='Log out';}});
+on('accountConnections','click',()=>{closeAccount();showSettings();});on('accountLibrary','click',()=>{closeAccount();showLibrary();});on('accountLogout','click',async()=>{const button=$('accountLogout');button.disabled=true;button.querySelector('span').textContent='Logging out?';try{await signOut();}finally{button.disabled=false;button.querySelector('span').textContent='Sign out';}});
 document.addEventListener('pointerdown',e=>{if(!$('accountWidget').contains(e.target))closeAccount();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('accountMenu').hidden){closeAccount();$('accountTrigger').focus();}});
 on('accountMenu','keydown',e=>{const items=[...$('accountMenu').querySelectorAll('[role="menuitem"]')];const at=items.indexOf(document.activeElement);let index;if(e.key==='ArrowDown')index=(at+1)%items.length;if(e.key==='ArrowUp')index=(at-1+items.length)%items.length;if(e.key==='Home')index=0;if(e.key==='End')index=items.length-1;if(index!==undefined){e.preventDefault();items[index].focus();}});
@@ -617,7 +617,7 @@ function renderWorkflow(){
     $('emptyStage').querySelector('h2').innerHTML='YOUR RESULT.<br><span>RIGHT HERE.</span>';$('emptyStage').querySelector('p').textContent='Prepare the model inputs, then generate. Your original result will appear here.';
   }else{$('emptyStage').querySelector('h2').innerHTML='A BLANK CANVAS.<br><span>ENDLESS DIRECTIONS.</span>';$('emptyStage').querySelector('p').textContent='Write a prompt. Choose your model. Give your next idea somewhere to land.';}
   let missing=[];if(state.provider==='replicate'&&state.model)try{const input=preparePrompt(collectInputs(),state.model,w.hasPrompt?$('prompt').value:undefined);missing=missingInputs(input,state.model.schema);}catch{}
-  $('generate').innerHTML=icon(inputOnly?'arrow':'sparkles')+(inputOnly?'Run model':'Generate')+' '+icon('arrow');$('generate').disabled=!state.activeSessionId||state.inputBusy>0||pendingGenerations.has(state.activeSessionId);$('contextRun').disabled=$('generate').disabled;
+  $('generate').innerHTML=icon(inputOnly?'arrow':'sparkles')+(inputOnly?'Run model':'Generate');$('generate').disabled=!state.activeSessionId||state.inputBusy>0||pendingGenerations.has(state.activeSessionId);$('contextRun').disabled=$('generate').disabled;
   $('generate').title=state.inputBusy?'Saving input images…':missing.length?'Required: '+missing.join(', '):'Submit generation once';
 }
 on('advancedJson','input',()=>{captureSession();renderWorkflow();});
@@ -764,4 +764,4 @@ function setupFinalUI(){
  window.addEventListener('storage',e=>{if(e.key===attachmentDraftKey())renderChatAttachmentTray();});
 }
 
-boot().catch(e=>{$('serverStatus').textContent='Local server unavailable';error('Start START-LAB.cmd and open the local address. '+e.message);});
+boot().catch(e=>{$('serverStatus').textContent='Workshop unavailable';error('The Workshop could not finish loading. '+e.message);});
