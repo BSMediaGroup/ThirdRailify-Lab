@@ -14,6 +14,7 @@
   "assets/icons/replicate-0.svg": "brand-assets/replicate.svg",
   "assets/icons/opanai.svg": "brand-assets/openai.svg",
   "assets/icons/grok-0.svg": "brand-assets/xai.svg",
+  "assets/icons/google-0.svg": "brand-assets/google.svg",
   "public/login.html": "login.html",
   "public/login.js": "login.js",
   "public/login.css": "login.css",

@@ -3,11 +3,11 @@ import { authorize, proxyAuth, anonymousSubject } from '../lib/auth.mjs';
 import { ready, rate } from '../lib/storage.mjs';
 import { apiRoute } from '../lib/api.mjs';
 import { receiveWebhook } from '../lib/jobs.mjs';
-const publicAssets=new Set(['/favicon.ico','/backgrounds/labseo.webp','/auth-icons/discord.svg','/auth-icons/google.svg','/auth-icons/github.svg','/auth-icons/twitter.svg','/login','/login.html','/login.js','/login.css','/brand-assets/labs0.svg','/brand-fonts/display','/brand-fonts/body','/brand-fonts/bodybold','/brand-fonts/mono']);
+const publicAssets=new Set(['/favicon.ico','/backgrounds/labseo.webp','/auth-icons/discord.svg','/auth-icons/google.svg','/auth-icons/github.svg','/auth-icons/twitter.svg','/login','/login.html','/login.js','/login.css','/brand-assets/labs0.svg','/brand-assets/google.svg','/brand-fonts/display','/brand-fonts/body','/brand-fonts/bodybold','/brand-fonts/mono']);
 const headers={
   'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'DENY', 'X-Robots-Tag':'noindex, nofollow', 'Referrer-Policy':'no-referrer',
   'Permissions-Policy':'camera=(), microphone=(), geolocation=()',
-  'Content-Security-Policy':"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+  'Content-Security-Policy':"default-src 'self'; script-src 'self' https://cse.google.com https://www.google.com https://www.gstatic.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://cse.google.com https://www.google.com https://challenges.cloudflare.com; frame-src https://cse.google.com https://www.google.com https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
 };
 export async function onRequest(context) {
   let response,publicPreview=false;

@@ -1,5 +1,17 @@
 # Bump notes
 
+## 2026-09-13 — Search, stock, encrypted profiles and usage control room
+
+CURRENT VER=0.4.0
+
+PENDING VER=0.5.0
+
+- Replaced the unfinished Google JSON API adapter with the authenticated, image-first Standard Programmable Search Element. No Google API key is used; callbacks supply documented result metadata while Google retains compliant rendering, branding and ads.
+- Added operational Pexels, 24-hour-cached Pixabay and hotlinked/tracked Unsplash research with provider-specific filters, attribution and compatible Chat/generation/Compose actions.
+- Added AES-GCM named credential profiles, immutable Runtime Defaults, server-side account/model preference resolution, Master-only account restrictions and existing-job provenance recovery.
+- Added an idempotent provider usage ledger and filtered Settings dashboard with tokens, requests, outputs, searches, tools, quota evidence, storage and explicit actual/estimated/unknown cost coverage.
+- Added Lab migration `0002_provider_vault_stock_usage.sql`, new provider/profile/usage modules, `public/control-room.css`, Google brand packaging and focused D1/R2/provider-contract tests.
+
 ## 2026-09-13 — Document toolbar alignment
 
 - Moved the Research Desk visibility toggle to the far-right end of the document toolbar while retaining a clear divider from project and conversation actions.

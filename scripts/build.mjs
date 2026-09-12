@@ -23,7 +23,7 @@ for (const [source, target] of Object.entries(manifest)) {
   output.push({ source, target, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
 }
 // The complete stylesheet is assembled in its approved cascade order, so the shell cannot load only some of its visual layers.
-const styleSources = ["public/style.css","public/upgrade.css","public/workspace.css","public/final-pass.css","public/violet.css"];
+const styleSources = ["public/style.css","public/upgrade.css","public/workspace.css","public/final-pass.css","public/violet.css","public/control-room.css"];
 const styleBytes = Buffer.from((await Promise.all(styleSources.map(source => readFile(path.join(root, source), 'utf8')))).join('\n'));
 await writeFile(path.join(stage, 'lab.css'), styleBytes);
 output.push({source:styleSources.join(' + '),target:'lab.css',bytes:styleBytes.length,sha256:createHash('sha256').update(styleBytes).digest('hex')});

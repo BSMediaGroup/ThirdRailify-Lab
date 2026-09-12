@@ -958,6 +958,10 @@ YOUR NEXT\nBIG IDEA</textarea
           ><button aria-selected="false" id="imagesTab" role="tab">
             <svg class="icon"><use href="/icons.svg#search"></use></svg>Google
             Images
+          </button
+          ><button aria-selected="false" id="stockTab" role="tab">
+            <svg class="icon"><use href="/icons.svg#image"></use></svg>Stock
+            Media
           </button>
         </div>
         <div class="chat-panel" id="chatPanel">
@@ -1112,14 +1116,37 @@ YOUR NEXT\nBIG IDEA</textarea
                 <label>Size<select id="googleSize"><option value="">Any</option><option value="large">Large</option><option value="xlarge">Extra large</option><option value="xxlarge">XX large</option><option value="huge">Huge</option><option value="medium">Medium</option><option value="small">Small</option><option value="icon">Icon</option></select></label>
                 <label>Color mode<select id="googleColor"><option value="">Any</option><option value="color">Color</option><option value="gray">Grayscale</option><option value="mono">Black &amp; white</option><option value="trans">Transparent</option></select></label>
                 <label>Dominant color<select id="googleDominant"><option value="">Any</option><option>black</option><option>blue</option><option>brown</option><option>gray</option><option>green</option><option>orange</option><option>pink</option><option>purple</option><option>red</option><option>teal</option><option>white</option><option>yellow</option></select></label>
+                <label>Usage rights<select id="googleRights"><option value="">Any</option><option value="cc_publicdomain">Public domain</option><option value="cc_attribute">Attribution</option><option value="cc_sharealike">Share alike</option><option value="cc_noncommercial">Noncommercial</option><option value="cc_nonderived">No derivatives</option></select></label>
                 <label>Only this site<input id="googleSite" inputmode="url" maxlength="253" placeholder="example.com" /></label>
               </div>
             </details>
           </form>
-          <div aria-live="polite" class="image-search-state" id="googleSearchState"><svg aria-hidden="true" class="icon"><use href="/icons.svg#image"></use></svg><h3>Your reference shelf.</h3><p>Search real image results without leaving your project.</p></div>
-          <div aria-live="polite" class="image-results" id="googleResults"></div>
-          <button class="button full" hidden="" id="googleLoadMore" type="button">Load more results</button>
+          <div aria-live="polite" class="image-search-state" id="googleSearchState"><svg aria-hidden="true" class="icon"><use href="/icons.svg#image"></use></svg><h3>Your reference shelf.</h3><p>Google's image-first Standard Search Element loads after Workshop access is established.</p></div>
+          <div aria-live="polite" class="google-search-element" id="googleElement"></div>
           <div class="image-search-footer"><p>Search results are references. Verify usage rights before publication.</p><a href="https://www.google.com/imghp" id="googleExternal" rel="noopener noreferrer" target="_blank">Open in Google Images <svg aria-hidden="true" class="icon"><use href="/icons.svg#external"></use></svg></a></div>
+        </div>
+        <div class="stock-panel" hidden="" id="stockPanel">
+          <div class="stock-provider-switch" id="stockProviderSwitch" role="radiogroup" aria-label="Stock provider">
+            <button class="active" data-stock-provider="pexels" role="radio" aria-checked="true">Pexels</button>
+            <button data-stock-provider="pixabay" role="radio" aria-checked="false">Pixabay</button>
+            <button data-stock-provider="unsplash" role="radio" aria-checked="false">Unsplash</button>
+          </div>
+          <form class="image-search-form" id="stockSearchForm">
+            <div class="searchbox"><svg aria-hidden="true" class="icon"><use href="/icons.svg#search"></use></svg><input aria-label="Stock media query" autocomplete="off" id="stockQuery" maxlength="160" placeholder="Search stock media…" /></div>
+            <button class="button primary image-search-submit" id="stockSearch" type="submit"><svg aria-hidden="true" class="icon"><use href="/icons.svg#search"></use></svg><span>Search</span></button>
+            <details class="image-filters" id="stockFilters"><summary><svg aria-hidden="true" class="icon"><use href="/icons.svg#sliders"></use></svg>Provider filters</summary><div>
+              <label>Orientation<select id="stockOrientation"></select></label>
+              <label id="stockTypeField">Type<select id="stockType"></select></label>
+              <label id="stockCategoryField">Category<select id="stockCategory"></select></label>
+              <label id="stockSizeField">Size<select id="stockSize"></select></label>
+              <label id="stockColorField">Color<input id="stockColor" maxlength="24" placeholder="Any" /></label>
+              <label class="check-field" id="stockSafeField"><input id="stockSafe" type="checkbox" checked />SafeSearch</label>
+            </div></details>
+          </form>
+          <div aria-live="polite" class="image-search-state" id="stockSearchState"><svg aria-hidden="true" class="icon"><use href="/icons.svg#image"></use></svg><h3>Licensed visual research.</h3><p>Choose a provider, search, and retain its source attribution.</p></div>
+          <div aria-live="polite" class="stock-results" id="stockResults"></div>
+          <button class="button full" hidden id="stockLoadMore" type="button">Load more</button>
+          <div class="image-search-footer"><p id="stockRightsNote">Provider-specific attribution and license links stay with selected media.</p><a id="stockRights" href="https://www.pexels.com/license/" rel="noopener noreferrer" target="_blank">Usage information <svg aria-hidden="true" class="icon"><use href="/icons.svg#external"></use></svg></a></div>
         </div>
       </aside>
       <main
@@ -1237,34 +1264,17 @@ YOUR NEXT\nBIG IDEA</textarea
                   >Provider usage
                 </h2>
               </div>
-              <span class="tag">PLANNED · NOT COLLECTING</span>
+              <span class="tag">PRIVATE LEDGER</span>
             </div>
             <p class="helper">
-              Per-response token counts appear in Research when returned.
-              Historical usage graphs, cross-provider spend estimates, and
-              balances are not connected yet.
+              Provider-reported usage, searches, outputs, quota evidence, and
+              cost coverage. Unknown cost is never presented as zero.
             </p>
-            <div
-              aria-label="Usage chart scaffold. No recorded data."
-              class="usage-placeholder"
-              role="img"
-            >
-              <span>No usage data connected</span>
-            </div>
-            <div class="usage-providers">
-              <div>
-                <strong>Replicate</strong><span>Usage —</span
-                ><small>Balance not connected</small>
-              </div>
-              <div>
-                <strong>GPT / OpenAI</strong><span>Tokens —</span
-                ><small>Cost estimates deferred</small>
-              </div>
-              <div>
-                <strong>Grok</strong><span>Tokens —</span
-                ><small>Balance not connected</small>
-              </div>
-            </div>
+            <div class="usage-filters"><label>Range<select id="usageRange"><option value="24h">24h</option><option value="7d">7d</option><option value="30d" selected>30d</option><option value="90d">90d</option></select></label><label>Provider<select id="usageProvider"><option value="">All providers</option><option>replicate</option><option>openai</option><option>xai</option><option>google</option><option>pexels</option><option>pixabay</option><option>unsplash</option></select></label><label>Metric<select id="usageMetric"><option value="requests">Requests</option><option value="tokens">Tokens</option><option value="searches">Searches</option></select></label></div>
+            <div class="usage-kpis" id="usageKpis"></div>
+            <div class="usage-chart" id="usageChart" role="img" aria-label="Provider usage time series"></div>
+            <div class="usage-providers" id="usageProviders"></div>
+            <div class="usage-table" id="usageRecent"></div>
           </section>
           <section class="settings-card">
             <h2>
@@ -1387,7 +1397,7 @@ YOUR NEXT\nBIG IDEA</textarea
         ><b id="serverStatus">Connecting to Workshop</b></span
       ><span id="footerInfo"
         >Keys stay server-side · Projects stay in your account</span
-      ><span>THIRD RAILIFY LAB <b>0.4.0</b></span>
+      ><span>THIRD RAILIFY LAB <b>0.5.0</b></span>
     </footer>
     <input
       accept="image/png,image/jpeg,image/webp"
@@ -1415,7 +1425,11 @@ YOUR NEXT\nBIG IDEA</textarea
         </p>
         <div id="keyFields"></div>
         <details class="settings-models connection-section">
-          <summary>Direct-provider model settings</summary>
+          <summary>
+            <svg aria-hidden="true" class="icon connection-summary-prefix"><use href="/icons.svg#sliders"></use></svg>
+            <span class="connection-summary-copy"><strong>Direct-provider model settings</strong><small>Provider model defaults and selections</small></span>
+            <span aria-hidden="true" class="disclosure-chevron"><svg class="icon"><use href="/icons.svg#chevron"></use></svg></span>
+          </summary>
           <div class="field-grid" id="modelSettings"></div>
           <p class="helper">
             Model dropdowns are loaded from your saved provider keys. Image and

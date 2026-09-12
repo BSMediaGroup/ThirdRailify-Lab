@@ -9,11 +9,16 @@ Node 22.16.0 / Wrangler 4.60.0. Cloudflare builds from the repository root with 
 ```text
 assets/                  approved fonts, logos, and social-preview artwork
 public/                  preserved vanilla Studio/Research UI and canonical login client
-public/violet.css        final dark gold/muted-violet theme and responsive image-search layer
+public/violet.css        final dark gold/muted-violet theme
+public/control-room.css  provider, stock-media, Google action and usage-dashboard layer
 functions/_middleware.js protected Pages application, APIs, media and callbacks
 lib/                     account-owned repositories and provider adapters
-lib/google-images.mjs    supported Google image search, signed results and bounded private import
-migrations/0001_lab.sql   independent Lab schema and migration ledger
+lib/google-images.mjs    Google callback normalization and bounded private image import
+lib/stock-media.mjs      Pexels/Pixabay/Unsplash search, attribution and selection contracts
+lib/provider-profiles.mjs encrypted credential vault and effective-profile resolver
+lib/usage.mjs            idempotent safe provider-usage ledger and dashboard queries
+migrations/0001_lab.sql  independent Lab base schema
+migrations/0002_provider_vault_stock_usage.sql  profile, usage, cache and attribution schema
 backend/                 scheduled recovery helper; no frontend, hostname or public endpoint
 scripts/                 build, checked provisioning and migration preparation
 tests/                   D1/R2, account, recovery and Pages-runtime browser checks
@@ -36,13 +41,23 @@ Lab D1 stores projects, conversations, preferences, job state and asset metadata
 
 ## Bindings and recovery
 
-Pages bindings: `LAB_DB`, `THIRDRAILIFY_AUTH_DB`, `LAB_FILES`. Existing production encrypted secrets are `REPLICATE_API_TOKEN`, `OPENAI_API_KEY`, `XAI_API_KEY`, and `REPLICATE_WEBHOOK_SIGNING_SECRET`. Google Images additionally requires the not-yet-configured encrypted secret `GOOGLE_CUSTOM_SEARCH_API_KEY` and non-secret Pages variable `GOOGLE_CUSTOM_SEARCH_CX` containing the Programmable Search Engine ID. Secret values never enter client output or Git. Configure the API key interactively with `npm.cmd exec wrangler -- pages secret put GOOGLE_CUSTOM_SEARCH_API_KEY --project-name thirdrailify-lab`; configure the engine ID in the Pages dashboard under Settings > Variables and Secrets. `LAB_ENABLED` is the operational gate; `LAB_PAID_ENABLED` pauses new paid submissions independently. Preview bindings contain no production databases or secrets.
+Pages bindings: `LAB_DB`, `THIRDRAILIFY_AUTH_DB`, `LAB_FILES`. Runtime provider secrets are `REPLICATE_API_TOKEN`, `OPENAI_API_KEY`, `XAI_API_KEY`, `PEXELS_API_KEY`, `PIXABAY_API_KEY`, `UNSPLASH_ACCESS_KEY`, and `REPLICATE_WEBHOOK_SIGNING_SECRET`. `GOOGLE_PSE_CX` is a client-visible engine identifier, not an API key or vault entry. Named provider profiles are AES-GCM encrypted before D1 persistence with a per-record nonce and versioned `LAB_VAULT_MASTER_KEY_V1`, held only as a Cloudflare secret. Browsers receive labels, status, fingerprints and effective access, never raw credential values. `LAB_ENABLED` is the operational gate; `LAB_PAID_ENABLED` pauses new paid submissions independently. Preview bindings contain no production databases or secrets.
 
 ## Google Images research
 
-The Research Desk uses Google Custom Search JSON API with `searchType=image`; no scraping or unofficial endpoint is used. Query, SafeSearch, type, size, color, dominant-color, site, and bounded pagination controls are sent from the browser to an account/project-protected Function. The Function adds credentials, returns only a sanitized result projection, and signs short-lived result capabilities bound to the authenticated account and project. Thumbnails and imports pass through those capabilities. Imports accept only public HTTPS PNG/JPEG/WebP responses, revalidate redirects, enforce time, byte, signature, and dimension limits, and save originals into the existing private R2 repository before any chat, generation, or Compose action.
+The Research Desk uses the free, ad-supported Google Programmable Search **Standard Search Element**. It does not use Custom Search JSON API and requires no Google API key. The authenticated client registers documented `image.starting`, `image.ready`, and `image.rendered` callbacks before loading `https://cse.google.com/cse.js?cx=…`; Google retains its own result rendering, branding and advertising. Lab action controls use only documented callback metadata and are added adjacent to Google's image results. Supported image type, size, color, dominant-color, rights and site-restriction attributes are passed to the Element. Engine scope is shown as `Configured engine` because the current integration cannot prove legacy whole-web versus site-restricted configuration.
 
-Search and filters are remembered per project in scoped browser storage; results themselves are not persisted there. Chat adds an attachment to the unsent draft, generation attaches only to schema-compatible image inputs (or preserves the image in a visible unassigned reference tray), and Compose asks before replacing a different base image. Publication rights remain the operator's responsibility. If either Google setting is absent, the UI stays available and reports a precise unconfigured state.
+Google result imports and Pexels/Pixabay selections use the restricted importer: HTTPS only, no credentials or unexpected ports, public DNS verification on every redirect, bounded redirects/time/bytes, MIME/signature checks and a 40-megapixel decoded-header limit. Originals are saved only to the authenticated account/project. Google searches/results-used are local Workshop activity, not Google billing or quota evidence.
+
+## Stock media, profiles and usage
+
+Stock Media keeps distinct Pexels, Pixabay and Unsplash contracts behind protected Functions. Pexels preserves photographer/Pexels attribution and response rate headers. Pixabay search results are cached for 24 hours; deliberate selections are downloaded into private R2 rather than permanently hotlinked. Unsplash displays returned hotlinked URLs, preserves photographer/Unsplash attribution and UTM links, and calls `download_location` before a selection. Unsplash stays provider-backed rather than being silently copied; it works in Research Chat and compatible URL-based generation inputs, while the current canvas/Compose path clearly refuses it because export would not be reliable.
+
+Runtime Defaults remain immutable. Authorized provider administrators can create, verify, enable/disable, default and logically remove named encrypted profiles. Account/provider/model preferences are server-resolved immediately before each provider call. Master-owned Admin policies can restrict an account to selected profiles; queued submissions recheck the policy, while already-submitted jobs use their retained credential provenance for cancellation/reconciliation without exposing it.
+
+The usage ledger stores safe, idempotent provider request evidence: account/project/job or conversation IDs, provider/profile/model/operation, outcome, safe provider request ID, returned tokens/outputs/tools/searches/cost and rate headers. Prompts and secrets are excluded. Dashboard costs remain explicitly `actual`, `estimated`, or `unknown`; unsupported provider balances stay unavailable rather than zero.
+
+Research tab/search/filter state is account/project scoped. Chat adds an attachment to the unsent draft, generation attaches only to schema-compatible image inputs (or preserves the image in a visible unassigned reference tray), and Compose asks before replacing a different base image. Publication rights remain the operator's responsibility. A missing CX or stock credential reports a precise unavailable state.
 
 The backend-only `thirdrailify-lab-recovery` helper has its own `backend/wrangler.jsonc` and minute cron. It claims persisted jobs, checks current permission before a paid submission, polls known predictions when needed, imports completed originals, retries downloads and provider-file cleanup, and marks interrupted submissions uncertain. It has the same storage bindings and only the three provider API secrets. It does not serve Pages APIs or own a hostname. A browser, `waitUntil` or process-local loop is not the durable job executor.
 
@@ -52,7 +67,7 @@ Research streams preserve partial answers in D1 and track uploaded provider file
 
 ## Operations and evidence
 
-See [POC parity](docs/POC_PARITY.md) and [release evidence / rollback](docs/RELEASE.md). Use reviewed migration ledgers only: Admin account migrations `0002_full_admin_capability_denials.sql` and `0003_workshop_access.sql`, and Lab `0001_lab.sql`. Never apply Commerce migrations for Workshop. Back up an existing affected database before mutation. Deploy compatible Admin first, then the checked Git Pages release and helper. Do not deploy stale `dist` after a failed build.
+See [POC parity](docs/POC_PARITY.md) and [release evidence / rollback](docs/RELEASE.md). This milestone adds reviewed Admin migration `0004_workshop_provider_profile_restrictions.sql` and Lab migration `0002_provider_vault_stock_usage.sql`; never apply Commerce migrations for Workshop. Back up both existing D1 databases before mutation. Deploy compatible Admin first, then Lab Pages and its recovery helper from a checked build.
 
 Local tests: `npm.cmd test` (set `LAB_TEST_ADMIN_ROOT` to the checked Admin release directory when using an isolated worktree), `npm.cmd run test:poc`; Pages compilation uses `npx.cmd wrangler pages functions build functions --outdir .artifacts/functions-build --compatibility-flags=nodejs_compat`. `tests/browser-server.mjs` runs the compiled Pages handler with real local D1/R2 and explicitly synthetic local accounts, without paid providers. `tests/browser-check.mjs` exercises the complete gold/violet shell, Google Images workflow, destination actions, panel controls, popout, fullscreen, menus, and pages at 1920, 1440, 768, and 390 pixels. Set `LAB_BROWSER_HEADED=1` for headed evidence. These local fixtures are not live acceptance.
 Image lab for Third Railify
