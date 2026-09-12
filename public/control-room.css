@@ -168,3 +168,35 @@
   .key-profile-scaffold > summary,.settings-models > summary,.disclosure-chevron .icon,.model-result,.model-result .model-cover { transition: none; }
   .usage-line,.usage-area,.usage-point { animation: none; opacity: 1; stroke-dashoffset: 0; transform: none; }
 }
+
+/* Provider marks inherit the selector label color in every button state. */
+.provider-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.provider-tab-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  background: currentColor;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.provider-tab-icon--replicate {
+  -webkit-mask-image: url('/assets/icons/replicate-0.svg');
+  mask-image: url('/assets/icons/replicate-0.svg');
+}
+.provider-tab-icon--openai {
+  -webkit-mask-image: url('/assets/icons/gpt-0.svg');
+  mask-image: url('/assets/icons/gpt-0.svg');
+}
+.provider-tab-icon--xai {
+  -webkit-mask-image: url('/assets/icons/grok-0.svg');
+  mask-image: url('/assets/icons/grok-0.svg');
+}

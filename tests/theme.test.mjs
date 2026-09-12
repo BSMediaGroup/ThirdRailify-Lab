@@ -47,3 +47,12 @@ test('Connections publishes approved brand marks for every stock provider', asyn
     assert.match(app, new RegExp(`'${provider}'`));
   }
 });
+
+test('image provider selector uses approved monochrome marks that inherit label color', async () => {
+  const [html, controls] = await Promise.all([read('public/index.html'), read('public/control-room.css')]);
+  for (const [provider, icon] of [['replicate', 'replicate-0'], ['openai', 'gpt-0'], ['xai', 'grok-0']]) {
+    assert.match(html, new RegExp(`data-provider="${provider}"[\\s\\S]{0,220}provider-tab-icon--${provider}`));
+    assert.match(controls, new RegExp(`provider-tab-icon--${provider}[\\s\\S]{0,140}${icon}\\.svg`));
+  }
+  assert.match(controls, /\.provider-tab-icon\s*\{[\s\S]*background: currentColor/);
+});

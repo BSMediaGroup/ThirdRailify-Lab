@@ -369,9 +369,25 @@
           <section class="control-section">
             <label class="section-label">IMAGE PROVIDER</label>
             <div aria-label="Image provider" class="provider-tabs" role="group">
-              <button class="active" data-provider="replicate">Replicate</button
-              ><button data-provider="openai">GPT</button
-              ><button data-provider="xai">Grok</button>
+              <button class="active" data-provider="replicate"
+                ><span
+                  aria-hidden="true"
+                  class="provider-tab-icon provider-tab-icon--replicate"
+                ></span
+                ><span>Replicate</span></button
+              ><button data-provider="openai"
+                ><span
+                  aria-hidden="true"
+                  class="provider-tab-icon provider-tab-icon--openai"
+                ></span
+                ><span>GPT</span></button
+              ><button data-provider="xai"
+                ><span
+                  aria-hidden="true"
+                  class="provider-tab-icon provider-tab-icon--xai"
+                ></span
+                ><span>Grok</span></button
+              >
             </div>
           </section>
           <section class="control-section" id="replicateModelSection">
