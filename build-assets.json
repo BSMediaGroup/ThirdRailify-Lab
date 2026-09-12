@@ -10,6 +10,7 @@
   "assets/fonts/body/Blinker-SemiBold.ttf": "brand-fonts/bodybold",
   "assets/fonts/monospace/GeistMono-VariableFont_wght.ttf": "brand-fonts/mono",
   "assets/logos/labs0.svg": "brand-assets/labs0.svg",
+  "assets/logos/boltv2straight.svg": "brand-assets/boltv2straight.svg",
   "assets/icons/replicate-0.svg": "brand-assets/replicate.svg",
   "assets/icons/opanai.svg": "brand-assets/openai.svg",
   "assets/icons/grok-0.svg": "brand-assets/xai.svg",
