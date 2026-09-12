@@ -412,7 +412,9 @@ function googleReady(name,query,promos,results,resultsDiv){
     if(rendered.items.length)$('googleSearchState').hidden=true;
     else if(Array.isArray(results)&&results.length)imageSearchMessage('error','Google results could not be displayed.','The provider returned malformed image metadata. Try another query or open Google Images.');
     else imageSearchMessage('empty','No image results.','Try a broader query or adjust the Google image filters.');
-  }catch{
+  }catch(error){
+    const knownReasons=['Google result renderer requires a destination and action handler.','Google returned malformed result collections.'];
+    console.warn('Lab Google image renderer failure',{reason:knownReasons.includes(error?.message)?error.message:'DOM rendering failed',promos:promos==null?'null':Array.isArray(promos)?'array':typeof promos,results:results==null?'null':Array.isArray(results)?'array':typeof results,resultsDiv:Boolean(resultsDiv?.ownerDocument),correlationId:crypto.randomUUID()});
     resultsDiv?.replaceChildren();imageSearchMessage('error','Google Images could not display these results.','Try again or open Google Images. Provider exception details were not shown.');
   }
   return true;
