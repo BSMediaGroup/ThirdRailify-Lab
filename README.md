@@ -42,3 +42,5 @@ See [POC parity](docs/POC_PARITY.md) and [release evidence / rollback](docs/RELE
 
 Local tests: `npm.cmd test` (set `LAB_TEST_ADMIN_ROOT` to the checked Admin release directory when using an isolated worktree), `npm.cmd run test:poc`; Pages compilation uses `npx.cmd wrangler pages functions build functions --outdir .artifacts/functions-build --compatibility-flags=nodejs_compat`. `tests/browser-server.mjs` runs the compiled Pages handler with real local D1/R2 and explicitly synthetic local accounts, without paid providers. `tests/browser-check.mjs` exercises it at four widths. These local fixtures are not live acceptance.
 Image lab for Third Railify
+
+Login polish (2026-09-12): the sign-in and OAuth verification views share the exact Lab header motif gradient, housing and hover treatment. Packaged the canonical Admin OAuth icons and `thirdadminfav2.ico` favicon through the asset allowlist. Added accessible password visibility, provider back navigation and verification retry/expiry states. Inspected desktop/mobile and OAuth/error screenshots; these UI fixtures do not prove live login.

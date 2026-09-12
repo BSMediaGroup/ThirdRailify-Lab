@@ -20,5 +20,10 @@
   "public/login.html": "login.html",
   "public/login.js": "login.js",
   "public/login.css": "login.css",
-  "public/session.js": "session.js"
+  "public/session.js": "session.js",
+  "assets/icons/discord.svg": "auth-icons/discord.svg",
+  "assets/icons/google.svg": "auth-icons/google.svg",
+  "assets/icons/github.svg": "auth-icons/github.svg",
+  "assets/icons/twitter.svg": "auth-icons/twitter.svg",
+  "assets/icons/thirdadminfav2.ico": "favicon.ico"
 }

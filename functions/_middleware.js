@@ -3,7 +3,7 @@ import { authorize, proxyAuth, anonymousSubject } from '../lib/auth.mjs';
 import { ready, rate } from '../lib/storage.mjs';
 import { apiRoute } from '../lib/api.mjs';
 import { receiveWebhook } from '../lib/jobs.mjs';
-const publicAssets=new Set(['/login','/login.html','/login.js','/login.css','/brand-assets/labs0.svg','/brand-fonts/display','/brand-fonts/body','/brand-fonts/bodybold','/brand-fonts/mono']);
+const publicAssets=new Set(['/favicon.ico','/auth-icons/discord.svg','/auth-icons/google.svg','/auth-icons/github.svg','/auth-icons/twitter.svg','/login','/login.html','/login.js','/login.css','/brand-assets/labs0.svg','/brand-fonts/display','/brand-fonts/body','/brand-fonts/bodybold','/brand-fonts/mono']);
 const headers={
   'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'DENY', 'X-Robots-Tag':'noindex, nofollow', 'Referrer-Policy':'no-referrer',
   'Permissions-Policy':'camera=(), microphone=(), geolocation=()',

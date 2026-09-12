@@ -464,7 +464,7 @@ const initialThumb=thumbSettings();
 
 function setupBrand(){
   $('brandMark').classList.toggle('has-motif',Boolean(state.config.brand?.logo));
-  if(state.config.brand?.logo){$('brandMark').innerHTML='<img src="/brand-assets/labs0.svg" alt="">';const favicon=document.querySelector('link[rel="icon"]');if(favicon)favicon.href='/brand-assets/labs0.svg';}
+  if(state.config.brand?.logo){$('brandMark').innerHTML='<img src="/brand-assets/labs0.svg" alt="">';const favicon=document.querySelector('link[rel="icon"]');if(favicon)favicon.href='/favicon.ico';}
   else $('brandMark').title='Logo asset not found: assets/logos/labs0.svg. Check Connections → Packaged brand assets.';
   if(state.config.fonts.includes('display'))document.documentElement.classList.add('brand-font-ready');
 }
