@@ -2,6 +2,7 @@
 import {Miniflare} from 'miniflare';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
+import {recordUsage} from '../lib/usage.mjs';
 const origin='http://127.0.0.1:8798';
 const account={id:'local-browser-fixture',displayName:'Workshop Test',role:'admin',adminLevel:'master',status:'active',avatarUrl:null};
 const csrf='local-browser-fixture-csrf',token='local-browser-fixture-token-12345678901234567890';
@@ -17,8 +18,14 @@ const env=await mf.getBindings();
 async function migration(db,url){let part='';for(const line of (await readFile(url,'utf8')).replace(/^--.*$/gm,'').split(/\r?\n/)){part+=line+'\n';if(line.trim().endsWith(';')){await db.prepare(part).run();part='';}}}
 await migration(env.LAB_DB,new URL('../migrations/0001_lab.sql',import.meta.url));
 await migration(env.LAB_DB,new URL('../migrations/0002_provider_vault_stock_usage.sql',import.meta.url));
+await migration(env.LAB_DB,new URL('../migrations/0003_provider_cost_intelligence.sql',import.meta.url));
 for(const name of ['0001_auth_foundation.sql','0002_full_admin_capability_denials.sql','0003_workshop_access.sql','0004_workshop_provider_profile_restrictions.sql'])await migration(env.THIRDRAILIFY_AUTH_DB,new URL('../../ThirdRailify-Admin/migrations/'+name,import.meta.url));
 await env.THIRDRAILIFY_AUTH_DB.prepare("INSERT INTO accounts(id,display_name,role,admin_level,status,created_at,updated_at,source) VALUES(?,'Workshop Test','admin','master','active','2026-01-01','2026-01-01','test')").bind(account.id).run();
 await env.THIRDRAILIFY_AUTH_DB.prepare('INSERT INTO sessions VALUES(?,?,?,?,?,?,?,?,?,?)').bind('browser-fixture',account.id,hash(token),hash(csrf),'2026-01-01','2099-01-01','2026-01-01',null,origin,null).run();
+for(const [index,event] of [
+  {provider:'xai',model:'grok-4.6',operation:'research_chat',outcome:'succeeded',inputTokens:3519,cachedTokens:512,outputTokens:253,actualCostTicks:77_880_000,toolCalls:1},
+  {provider:'replicate',model:'black-forest-labs/flux-schnell',operation:'image_generation',outcome:'succeeded',generatedOutputs:1},
+  {provider:'pexels',operation:'stock_search',outcome:'succeeded',searchCount:1}
+].entries())await recordUsage(env,{idempotencyKey:'browser-usage-'+index,logicalRequestId:'browser-operation-'+index,ownerId:account.id,startedAt:new Date(Date.now()-index*2*3600000).toISOString(),...event});
 console.log('Local Pages runtime ready at '+origin+' (local fixtures, providers disabled).');
 process.on('SIGINT',async()=>{await mf.dispose();process.exit(0);});

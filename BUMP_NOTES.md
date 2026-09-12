@@ -1,5 +1,17 @@
 # Bump notes
 
+## 2026-09-13 — Provider cost intelligence and premium usage history
+
+CURRENT VER=0.5.0
+
+PENDING VER=0.6.0
+
+- Corrected Replicate lifecycle accounting so submission, polling, webhook completion and private-output import update one logical job operation. Added a deterministic production backfill for matching completed jobs and retained explicit unknown coverage elsewhere.
+- Added exact xAI cost-tick capture, authenticated pricing-metadata fallback, requested/served model evidence and versioned official OpenAI/Replicate pricing catalogs with effective dates, checked dates, source URLs and freshness tests.
+- Added Lab migration `0003_provider_cost_intelligence.sql` for logical IDs, modality usage, exact ticks, estimate nanos, immutable pricing snapshots, cost basis and coverage reason. No Admin schema or source is changed.
+- Rebuilt Usage with adaptive fractional-cent precision, separate actual/estimated KPIs, coverage, provider icons, seven-column history and accessible calculation/source detail.
+- Replaced the sparse path-only plot with range-aware buckets, intentional zero/one/multiple-point states, keyboard tooltips, real point markers, violet/gold area/line animation and reduced-motion behavior across every supported metric.
+
 ## 2026-09-13 — Stock-provider Connections branding
 
 - Added the supplied Pexels, Pixabay and Unsplash SVG marks to the allowlisted Lab build and exposed them through the existing provider-brand registry.

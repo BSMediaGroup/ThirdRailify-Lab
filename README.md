@@ -17,8 +17,10 @@ lib/google-images.mjs    Google callback normalization and bounded private image
 lib/stock-media.mjs      Pexels/Pixabay/Unsplash search, attribution and selection contracts
 lib/provider-profiles.mjs encrypted credential vault and effective-profile resolver
 lib/usage.mjs            idempotent safe provider-usage ledger and dashboard queries
+lib/provider-pricing.mjs versioned official pricing catalog and immutable cost calculation
 migrations/0001_lab.sql  independent Lab base schema
 migrations/0002_provider_vault_stock_usage.sql  profile, usage, cache and attribution schema
+migrations/0003_provider_cost_intelligence.sql  logical operations, exact ticks and pricing provenance
 backend/                 scheduled recovery helper; no frontend, hostname or public endpoint
 scripts/                 build, checked provisioning and migration preparation
 tests/                   D1/R2, account, recovery and Pages-runtime browser checks
@@ -57,7 +59,7 @@ The Connections and Settings provider summaries package the approved `pexels-0.s
 
 Runtime Defaults remain immutable. Authorized provider administrators can create, verify, enable/disable, default and logically remove named encrypted profiles. Account/provider/model preferences are server-resolved immediately before each provider call. Master-owned Admin policies can restrict an account to selected profiles; queued submissions recheck the policy, while already-submitted jobs use their retained credential provenance for cancellation/reconciliation without exposing it.
 
-The usage ledger stores safe, idempotent provider request evidence: account/project/job or conversation IDs, provider/profile/model/operation, outcome, safe provider request ID, returned tokens/outputs/tools/searches/cost and rate headers. Prompts and secrets are excluded. Dashboard costs remain explicitly `actual`, `estimated`, or `unknown`; unsupported provider balances stay unavailable rather than zero.
+The usage ledger stores one logical provider operation per stable job/conversation key. Lifecycle callbacks update that row instead of creating billable requests. It retains requested/served models, safe provider IDs, token modalities, outputs/searches/tools, xAI integer cost ticks, versioned estimate nanos, immutable rate snapshots and coverage reasons; prompts and secrets are excluded. Cost authority is `actual_provider`, `estimated_catalog`, `estimated_formula`, proven free/non-billable, `unknown`, or `not_applicable`. Unknown is never rendered as zero.
 
 Research tab/search/filter state is account/project scoped. Chat adds an attachment to the unsent draft, generation attaches only to schema-compatible image inputs (or preserves the image in a visible unassigned reference tray), and Compose asks before replacing a different base image. Publication rights remain the operator's responsibility. A missing CX or stock credential reports a precise unavailable state.
 
