@@ -19,6 +19,7 @@ async function api(route,{method='GET',body,signal}={}){
     if(['/api/preferences','/api/research/profile','/api/settings'].includes(route))body.revision=state.preferencesRevision||0;
   }
   const response=await fetch(route,{method,headers:{'X-Lab-Account':labSession.account.id,...(method==='POST'?{'Content-Type':'application/json','X-Lab-CSRF':state.csrf}:{})},body:body===undefined?undefined:JSON.stringify(body),signal});
+  if(!response.headers.get('content-type')?.includes('application/json'))throw new Error(`The Lab service returned an unexpected response (HTTP ${response.status}). Please try again shortly.`);
   const data=await response.json();if(response.status===401||['workshop_denied','account_changed'].includes(data.error)){location.replace('/login.html');throw new Error(data.message||'Access changed.');}if(!response.ok||data.ok===false)throw new Error(data.message||data.error||`Request failed (${response.status})`);if(data.project?.revision){projectRevisions.set(data.project.id,data.project.revision);const d=readDoc(data.project.id);if(d){d.serverRevision=data.project.revision;writeDoc(d);}}if(data.preferencesRevision!==undefined)state.preferencesRevision=data.preferencesRevision;return data;
 }
 function on(id,event,handler){$(id).addEventListener(event,async e=>{try{await handler(e);}catch(err){toast(err.message,true);}});}
@@ -33,13 +34,7 @@ function storageSet(key,val){try{localStorage.setItem(key,JSON.stringify(val));}
 
 async function boot(){
   const data=await api('/api/state');state.csrf=labSession.csrfToken;state.preferencesRevision=data.preferencesRevision;for(const p of data.projects)projectRevisions.set(p.id,readDoc(p.id)?.serverRevision??p.revision);updateAccountWidget();state.config=data.config;state.jobs=data.jobs;state.assets=data.assets;state.projects=data.projects;state.catalog=data.catalog;state.attachments=data.attachments||[];
-  if(data.config.fonts.length){
-    const mapping={display:['American Captain','--display'],body:['Blinker','--body'],bodybold:['Blinker',null],mono:['Geist Mono','--mono']};
-    const rules=data.config.fonts.map(k=>{const [family]=mapping[k];return `@font-face{font-family:"${family}";src:url('/brand-fonts/${k}');font-weight:${k==='bodybold'?600:k==='mono'?'100 900':400};font-display:swap}`;}).join('');
-    const style=document.createElement('style');style.textContent=rules;document.head.append(style);
-    document.fonts.ready.then(()=>drawThumbnail());
-    for(const key of data.config.fonts){const [family,varname]=mapping[key];if(varname)document.documentElement.style.setProperty(varname,`'${family}',${getComputedStyle(document.documentElement).getPropertyValue(varname)}`);}
-  }
+  document.fonts.ready.then(()=>drawThumbnail());
   $('serverStatus').textContent='Private Workshop connected';state.chosen=storageGet('tr-lab-model-choices',{});state.preferences=data.preferences||{};
   setupBrand();setupLayout();setupFinalUI();updateKeyStatus();renderHistory();renderModelCards(state.catalog);
   await initWorkspace();
@@ -474,7 +469,7 @@ function showBrandStatus(){
 }
 function closeAccount(){$('accountMenu').hidden=true;$('accountTrigger').setAttribute('aria-expanded','false');}
 on('accountTrigger','click',()=>{const open=$('accountMenu').hidden;$('accountMenu').hidden=!open;$('accountTrigger').setAttribute('aria-expanded',String(open));});
-on('accountConnections','click',()=>{closeAccount();showSettings();});on('accountLibrary','click',()=>{closeAccount();showLibrary();});on('loginScaffold','click',()=>{closeAccount();return signOut();});
+on('accountConnections','click',()=>{closeAccount();showSettings();});on('accountLibrary','click',()=>{closeAccount();showLibrary();});on('accountLogout','click',async()=>{const button=$('accountLogout');button.disabled=true;button.querySelector('span').textContent='Logging out?';try{await signOut();}finally{button.disabled=false;button.querySelector('span').textContent='Log out';}});
 document.addEventListener('pointerdown',e=>{if(!$('accountWidget').contains(e.target))closeAccount();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('accountMenu').hidden){closeAccount();$('accountTrigger').focus();}});
 on('accountMenu','keydown',e=>{const items=[...$('accountMenu').querySelectorAll('[role="menuitem"]')];const at=items.indexOf(document.activeElement);let index;if(e.key==='ArrowDown')index=(at+1)%items.length;if(e.key==='ArrowUp')index=(at-1+items.length)%items.length;if(e.key==='Home')index=0;if(e.key==='End')index=items.length-1;if(index!==undefined){e.preventDefault();items[index].focus();}});

@@ -1,13 +1,13 @@
 const response=await fetch('/api/auth/session',{cache:'no-store',redirect:'error'});
 export const labSession=await response.json();
-if(!response.ok||!labSession.authenticated||!labSession.workshop?.allowed){location.replace('/login.html');throw new Error('Workshop access is required.');}
+if(!response.ok||!labSession.authenticated||!labSession.workshop?.allowed){location.replace('/login');throw new Error('Workshop access is required.');}
 export const storagePrefix='lab:'+labSession.account.id+':';
 const storage=window.localStorage;
 const keys=()=>Object.keys(storage).filter(k=>k.startsWith(storagePrefix));
 export const scopedStorage={getItem:k=>storage.getItem(storagePrefix+k),setItem:(k,v)=>storage.setItem(storagePrefix+k,v),removeItem:k=>storage.removeItem(storagePrefix+k),key:i=>keys()[i]?.slice(storagePrefix.length)||null,get length(){return keys().length;}};
 const accountChannel=new BroadcastChannel('lab-account:'+labSession.account.id);
-accountChannel.onmessage=event=>{if(event.data==='signed-out')location.replace('/login.html');};
-export async function signOut(){const r=await fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':labSession.csrfToken},body:'{}'});if(!r.ok)throw new Error('Sign out could not be completed.');for(const key of keys())storage.removeItem(key);accountChannel.postMessage('signed-out');location.replace('/login.html');}
+accountChannel.onmessage=event=>{if(event.data==='signed-out')location.replace('/login');};
+export async function signOut(){const r=await fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':labSession.csrfToken},body:'{}'});if(!r.ok||!r.headers.get('content-type')?.includes('application/json')||!(await r.json()).ok)throw new Error('Log out could not be completed. Please try again.');for(const key of keys())storage.removeItem(key);accountChannel.postMessage('signed-out');location.replace('/login');}
 export function updateAccountWidget(){
   const root=document.getElementById('accountWidget');if(!root)return;
   const account=labSession.account,name=account.displayName||'Third Railify account';

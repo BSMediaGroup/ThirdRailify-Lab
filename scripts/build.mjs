@@ -22,6 +22,11 @@ for (const [source, target] of Object.entries(manifest)) {
   await copyFile(path.join(root, source), path.join(stage, target));
   output.push({ source, target, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
 }
+// The complete stylesheet is assembled in its approved cascade order, so the shell cannot load only some of its visual layers.
+const styleSources = ["public/style.css","public/upgrade.css","public/workspace.css","public/final-pass.css"];
+const styleBytes = Buffer.from((await Promise.all(styleSources.map(source => readFile(path.join(root, source), 'utf8')))).join('\n'));
+await writeFile(path.join(stage, 'lab.css'), styleBytes);
+output.push({source:styleSources.join(' + '),target:'lab.css',bytes:styleBytes.length,sha256:createHash('sha256').update(styleBytes).digest('hex')});
 await writeFile(path.join(stage, '_routes.json'), JSON.stringify({ version: 1, include: ['/*'], exclude: [] }));
 await writeFile(path.join(stage, '_headers'), '/*\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n  X-Robots-Tag: noindex, nofollow\n  Referrer-Policy: no-referrer\n  Cache-Control: private, no-store\n');
 await writeFile(path.join(root, '.artifacts', 'build-manifest.json'), JSON.stringify(output, null, 2));

@@ -4,12 +4,13 @@ import { readFile } from 'node:fs/promises';
 import { Miniflare } from 'miniflare';
 import { createHash, createHmac } from 'node:crypto';
 import { apiRoute } from '../lib/api.mjs';
-import { authorize } from '../lib/auth.mjs';
+import { authorize, proxyAuth } from '../lib/auth.mjs';
 import { workshopAccess } from '../lib/workshop-policy.js';
 import { enqueue, receiveWebhook, recover } from '../lib/jobs.mjs';
 import { onRequest } from '../functions/_middleware.js';
 import { pathToFileURL } from 'node:url';
 const adminRoot=process.env.LAB_TEST_ADMIN_ROOT ? pathToFileURL(process.env.LAB_TEST_ADMIN_ROOT.replace(/[\\/]?$/, '/')) : new URL('../../ThirdRailify-Admin/',import.meta.url);
+const {onRequest:authHandler}=await import(new URL('functions/api/auth/[[path]].js',adminRoot));
 const {onRequest:accessHandler}=await import(new URL('functions/api/workshop/[[path]].js',adminRoot));
 const {createSession,createHandoff,consumeHandoff}=await import(new URL('functions/_shared/auth-core.js',adminRoot));
 const origin='https://lab.thirdrailify.com',projectA=crypto.randomUUID(),projectB=crypto.randomUUID();
@@ -87,4 +88,12 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
     assert.equal((await workshopAccess(env.THIRDRAILIFY_AUTH_DB,'b')).allowed,false);
     const transfer=await createHandoff(env,'a',origin,'/research');const req=new Request(origin+'/api/auth/handoff');await assert.rejects(consumeHandoff(env,req,transfer.code,'https://evil.example'),/invalid/);await consumeHandoff(env,req,transfer.code,origin);await assert.rejects(consumeHandoff(env,req,transfer.code,origin),/invalid/);
   });
+  await t.test('Lab logout forwards CSRF to canonical authority, revokes the session and clears a host-only cookie',async()=>{
+    const account=await env.THIRDRAILIFY_AUTH_DB.prepare("SELECT * FROM accounts WHERE id='master1'").first();
+    const login=await createSession(env,new Request(origin+'/api/auth/handoff'),account,origin);
+    const request=new Request(origin+'/api/auth/logout',{method:'POST',headers:{Origin:origin,Cookie:login.cookie.split(';')[0],'X-CSRF-Token':login.csrfToken,'Content-Type':'application/json'},body:'{}'});
+    const originalFetch=globalThis.fetch;
+    try{globalThis.fetch=(url,options)=>authHandler({env,request:new Request(url,options)});const response=await proxyAuth(env,request,'logout');assert.equal(response.status,200);assert.equal((await response.json()).authenticated,false);assert.match(response.headers.get('set-cookie'),/Max-Age=0/i);assert.doesNotMatch(response.headers.get('set-cookie'),/Domain=/i);assert.ok((await env.THIRDRAILIFY_AUTH_DB.prepare('SELECT revoked_at FROM sessions WHERE id=?').bind(login.session.id).first()).revoked_at);await assert.rejects(authorize(env,new Request(origin+'/api/state',{headers:{Cookie:login.cookie.split(';')[0]}})),/Sign in/);}finally{globalThis.fetch=originalFetch;}
+  });
+
 });

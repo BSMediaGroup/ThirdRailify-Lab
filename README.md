@@ -4,7 +4,7 @@ The private creative Workshop runs on the Git-integrated Cloudflare Pages projec
 
 ## Build and layout
 
-Node 22.16.0 / Wrangler 4.60.0. Cloudflare builds from the repository root with `npm run build`, output `dist`. On Windows use `npm.cmd`. `build-assets.json` is the complete asset allowlist; `poc/`, environment files, local data, tests, diagnostics and backups are excluded. Every published route invokes Pages Functions. Preview and pages.dev hostnames fail closed; only the configured stable origin is enabled.
+Node 22.16.0 / Wrangler 4.60.0. Cloudflare builds from the repository root with `npm run build`, output `dist`. On Windows use `npm.cmd`. `build-assets.json` and the explicit four-source stylesheet list in `scripts/build.mjs` form the complete asset allowlist; `poc/`, environment files, local data, tests, diagnostics and backups are excluded. Every published route invokes Pages Functions. Preview and pages.dev hostnames fail closed; only the configured stable origin is enabled.
 
 ```text
 assets/                  approved fonts and logos (packaged by allowlist)
@@ -44,3 +44,5 @@ Local tests: `npm.cmd test` (set `LAB_TEST_ADMIN_ROOT` to the checked Admin rele
 Image lab for Third Railify
 
 Login polish (2026-09-12): the sign-in and OAuth verification views share the exact Lab header motif gradient, housing and hover treatment. Packaged the canonical Admin OAuth icons and `thirdadminfav2.ico` favicon through the asset allowlist. Added accessible password visibility, provider back navigation and verification retry/expiry states. Inspected desktop/mobile and OAuth/error screenshots; these UI fixtures do not prove live login.
+
+Runtime/provider repair (2026-09-12): avoid binding the global fetch function to a Providers instance, which Cloudflare rejects as an illegal invocation. The runtime test covers real adapters with local provider responses. Browser errors now reject non-JSON responses explicitly. The approved four CSS sources are combined in fixed order into `lab.css` by the root build; packaged fonts and the header motif load before account bootstrap. The account menu has a prominent Log out control and checks canonical logout success before clearing recovery state.
