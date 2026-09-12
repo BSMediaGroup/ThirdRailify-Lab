@@ -2,7 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="workspace-layout" viewBox="0 0 24 24"><rect height="18" rx="2" width="20" x="2" y="3"/><path d="M2 9h20M8 9v12M16 9v12"/></symbol>
 <symbol id="panel-right" viewBox="0 0 24 24"><rect height="16" rx="2" width="18" x="3" y="4"/><path d="M15 4v16m-4-8h-6m3-3-3 3 3 3"/></symbol>
-<symbol id="identity" viewBox="0 0 24 24"><circle cx="8" cy="8" r="4"/><path d="m17 3 4 7h-8Z"/><rect height="8" rx="2" width="8" x="13" y="13"/></symbol>
+<symbol id="palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18h1.4a2.1 2.1 0 0 0 0-4.2h-1.1a1.8 1.8 0 0 1 0-3.6H21V12a9 9 0 0 0-9-9Z"/><circle cx="7.5" cy="9" r="1"/><circle cx="10.5" cy="6.5" r="1"/><circle cx="15" cy="7" r="1"/><circle cx="17.5" cy="10.5" r="1"/></symbol>
 <symbol id="bolt" viewBox="0 0 24 24"><path d="m14 2-11 12h8l-1 8L22 9h-9z" fill="currentColor" stroke="none"/></symbol>
 <symbol id="image" viewBox="0 0 24 24"><rect height="18" rx="3" width="18" x="3" y="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 16 5-5 5 5 3-3 5 5"/></symbol>
 <symbol id="layers" viewBox="0 0 24 24"><path d="m12 3 10 5-10 5L2 8zm-10 9 10 5 10-5M2 16l10 5 10-5"/></symbol>

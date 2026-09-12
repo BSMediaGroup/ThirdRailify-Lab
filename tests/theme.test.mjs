@@ -27,8 +27,10 @@ test('workspace controls and icon semantics use their intended single locations'
   assert.match(researchHeader, /id="popoutResearch"/);
   assert.match(researchHeader, /id="researchTabLink"/);
   assert.match(html, /id="toggleResearch"[\s\S]{0,500}icons\.svg#workspace-layout/);
-  assert.match(html, /id="brandPageButton"[\s\S]{0,500}icons\.svg#identity/);
+  assert.match(html, /id="brandPageButton"[\s\S]{0,500}icons\.svg#palette/);
+  assert.match(html, /<small>CREATIVE WORKSHOP<\/small>/);
+  assert.doesNotMatch(html, /THE CREATIVE WORKSHOP/);
   assert.match(icons, /id="workspace-layout"/);
   assert.match(icons, /id="panel-right"/);
-  assert.match(icons, /id="identity"/);
+  assert.match(icons, /id="palette"/);
 });
