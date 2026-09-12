@@ -410,7 +410,7 @@ function googleReady(name,query,promos,results,resultsDiv){
     for(const item of rendered.items)googleResultRegistry.set(item.resultId,item);
     state.googleResults={sid:run.projectId,accountId:run.accountId,query:run.query,generation:run.generation,activityId:run.activityId,items:rendered.items};
     if(rendered.items.length)$('googleSearchState').hidden=true;
-    else if(results.length)imageSearchMessage('error','Google results could not be displayed.','The provider returned malformed image metadata. Try another query or open Google Images.');
+    else if(Array.isArray(results)&&results.length)imageSearchMessage('error','Google results could not be displayed.','The provider returned malformed image metadata. Try another query or open Google Images.');
     else imageSearchMessage('empty','No image results.','Try a broader query or adjust the Google image filters.');
   }catch{
     resultsDiv?.replaceChildren();imageSearchMessage('error','Google Images could not display these results.','Try again or open Google Images. Provider exception details were not shown.');

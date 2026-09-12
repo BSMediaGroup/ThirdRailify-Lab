@@ -190,14 +190,16 @@ function promotionCard(document, promotion) {
 
 export function renderGoogleImageResults({ resultsDiv, promos, results, binding, onAction }) {
   if (!resultsDiv?.ownerDocument || typeof onAction !== 'function') throw new TypeError('Google result renderer requires a destination and action handler.');
-  if (!Array.isArray(promos) || !Array.isArray(results)) throw new TypeError('Google returned malformed result collections.');
+  const promotionValues = promos == null ? [] : promos;
+  const resultValues = results == null ? [] : results;
+  if (!Array.isArray(promotionValues) || !Array.isArray(resultValues)) throw new TypeError('Google returned malformed result collections.');
   const document = resultsDiv.ownerDocument;
   const normalizedPromos = [];
-  for (const promo of promos) {
+  for (const promo of promotionValues) {
     try { normalizedPromos.push(normalizeGooglePromotion(promo)); } catch { /* Invalid remote promotion is not rendered. */ }
   }
   const items = [];
-  for (const result of results) {
+  for (const result of resultValues) {
     try { items.push(normalizeGoogleImageResult(result, binding, items.length)); } catch { /* Invalid remote result is not rendered. */ }
   }
   const fragment = document.createDocumentFragment();
