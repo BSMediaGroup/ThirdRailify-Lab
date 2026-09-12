@@ -6,7 +6,7 @@ const localStorage=scopedStorage;
 const $=id=>document.getElementById(id);
 const icon=name=>`<svg class="icon"><use href="/icons.svg#${name}"/></svg>`;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const state={csrf:labSession.csrfToken,config:null,provider:'replicate',modelId:'black-forest-labs/flux-schnell',model:null,assets:[],jobs:[],projects:[],selected:null,image:null,currentJob:null,mode:'generate',style:'',fileInputs:{},unassignedReferences:[],imageSearch:null,pollTimer:null,chatBusy:false,chatAbort:null,projectId:null,chosen:{},modelChoices:{},researchOnly:location.pathname==='/research',activeSessionId:null,restoring:false,paramValues:{},inputBusy:0,loadTicket:0,page:'generate'};
+const state={csrf:labSession.csrfToken,config:null,provider:'replicate',modelId:'black-forest-labs/flux-schnell',model:null,featuredModels:null,assets:[],jobs:[],projects:[],selected:null,image:null,currentJob:null,mode:'generate',style:'',fileInputs:{},unassignedReferences:[],imageSearch:null,pollTimer:null,chatBusy:false,chatAbort:null,projectId:null,chosen:{},modelChoices:{},researchOnly:location.pathname==='/research',activeSessionId:null,restoring:false,paramValues:{},inputBusy:0,loadTicket:0,page:'generate'};
 let toastTimer;const pendingGenerations=new Set();let sessionSwitchToken=0;
 function toast(text,error=false){$('toast').textContent=text;$('toast').classList.toggle('error',error);$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,error?8500:4200);}
 function error(text){$('mainError').textContent=text;$('mainError').hidden=!text;}
@@ -65,17 +65,33 @@ document.querySelectorAll('[data-provider]').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{state.presetId=b.dataset.preset;state.style=presets()[state.presetId]||'';updatePresetDisplay();captureSession();});
 on('prompt','input',()=>{captureSession();renderWorkflow();});
 
+function modelFallback(m){const parts=String(m?.name||m?.id||'AI').match(/[a-z0-9]+/gi)||['AI'],mark=(parts.length===1?parts[0].slice(0,2):parts.slice(0,2).map(part=>part[0]).join('')).toUpperCase();return `<span class="model-cover-empty" aria-hidden="true"><span class="model-fallback-mark">${esc(mark)}</span><span class="model-fallback-label">MODEL PREVIEW</span></span>`;}
+function modelVisual(m,kind='result'){const url=safeImageUrl(m?.coverImageUrl);return `<span class="model-${kind}-visual">${modelFallback(m)}${url?`<img class="model-cover" src="${esc(url)}" alt="${esc(m.name)} model feature image" loading="${kind==='result'?'eager':'lazy'}" referrerpolicy="no-referrer">`:''}<span class="model-visual-source">REPLICATE</span></span>`;}
+let featuredModelsPromise;
+async function hydrateFeaturedModels(){
+  if(state.featuredModels)return state.featuredModels;
+  if(featuredModelsPromise)return featuredModelsPromise;
+  if(!state.config?.keys?.REPLICATE_API_TOKEN)return state.catalog;
+  featuredModelsPromise=Promise.allSettled(state.catalog.map(model=>api('/api/model?id='+encodeURIComponent(model.id)))).then(results=>{
+    state.featuredModels=state.catalog.map((curated,index)=>results[index].status==='fulfilled'?{...results[index].value.model,...curated}:curated);
+    if($('modelsDialog').open&&!$('modelQuery').value.trim())renderModelCards(state.featuredModels);
+    return state.featuredModels;
+  });
+  return featuredModelsPromise;
+}
 function renderModelCards(items){
-  $('modelResults').innerHTML=items.length?items.map(m=>`<button class="model-result" data-model-id="${esc(m.id)}">${safeImageUrl(m.coverImageUrl)?`<img class="model-cover" src="${esc(m.coverImageUrl)}" alt="${esc(m.name)} model example" loading="lazy" referrerpolicy="no-referrer">`:`<span class="model-cover-empty">${icon('image')}</span>`}<span class="model-result-copy"><span class="tag">${esc(m.tag||'Replicate model')}</span><strong>${esc(m.name)}</strong><small>${esc(m.id)}</small><p>${esc(m.description||'Load to inspect its live schema and model inputs.')}</p>${m.runCount!=null?`<span class="model-stats">${new Intl.NumberFormat('en-US',{notation:'compact'}).format(m.runCount)} runs · reported by Replicate</span>`:''}</span>${icon('arrow')}</button>`).join(''):'<div class="soft-note">No models found. Try another search or paste the model URL.</div>';
-  $('modelResults').querySelectorAll('img').forEach(img=>img.onerror=()=>{img.hidden=true;});
+  $('modelResults').innerHTML=items.length?items.map(m=>`<button class="model-result" data-model-id="${esc(m.id)}">${modelVisual(m)}<span class="model-result-copy"><span class="model-result-topline"><span class="tag">${esc(m.tag||'Replicate model')}</span><span class="model-result-arrow" aria-hidden="true">${icon('arrow')}</span></span><strong>${esc(m.name)}</strong><small>${esc(m.id)}</small><p>${esc(m.description||'Load to inspect its live schema and model inputs.')}</p>${m.runCount!=null?`<span class="model-stats">${new Intl.NumberFormat('en-US',{notation:'compact'}).format(m.runCount)} runs · reported by Replicate</span>`:''}</span></button>`).join(''):'<div class="soft-note">No models found. Try another search or paste the model URL.</div>';
+  $('modelResults').querySelectorAll('img').forEach(img=>img.onerror=()=>img.remove());
   $('modelResults').querySelectorAll('[data-model-id]').forEach(b=>b.onclick=async()=>{try{await loadModel(b.dataset.modelId);$('modelsDialog').close();}catch(e){$('modelSearchError').textContent=e.message;$('modelSearchError').hidden=false;}});
 }
 
-on('modelPicker','click',()=>{$('modelSearchError').hidden=true;renderModelCards(state.catalog);$('modelsDialog').showModal();});
+on('modelPicker','click',()=>{$('modelSearchError').hidden=true;$('modelQuery').value='';renderModelCards(state.featuredModels||state.catalog);$('modelsDialog').showModal();void hydrateFeaturedModels();});
+$('modelPicker').addEventListener('pointerenter',()=>{void hydrateFeaturedModels();},{once:true});
+$('modelPicker').addEventListener('focus',()=>{void hydrateFeaturedModels();},{once:true});
 on('loadModel','click',async()=>{if(!state.config.keys.REPLICATE_API_TOKEN)return showSettings();await loadModel(state.modelId);});
 on('searchModels','click',async()=>{
   const q=$('modelQuery').value.trim();$('modelSearchError').hidden=true;
-  if(!q)return renderModelCards(state.catalog);
+  if(!q)return renderModelCards(state.featuredModels||state.catalog);
   $('searchModels').disabled=true;
   try{if(/^https:\/\/replicate\.com\//.test(q)||/^[\w-]+\/[\w.:-]+$/.test(q)){await loadModel(q);$('modelsDialog').close();}else{const data=await api('/api/models/search?q='+encodeURIComponent(q));renderModelCards(data.items);}}
   catch(e){$('modelSearchError').textContent=e.message;$('modelSearchError').hidden=false;}finally{$('searchModels').disabled=false;}
@@ -700,8 +716,8 @@ on('advancedJson','input',()=>{captureSession();renderWorkflow();});
 function renderModelInfo(){
   const m=state.model;$('modelCode').textContent=m?.id||state.modelId;const owner=m?.owner||m?.id?.split('/')[0]||'R';
   $('modelChipAvatar').innerHTML=safeImageUrl(m?.ownerAvatarUrl)?`<img src="${esc(m.ownerAvatarUrl)}" alt="" referrerpolicy="no-referrer">`:esc(owner.slice(0,1).toUpperCase());
-  $('modelInfoPanel').innerHTML=m?`${safeImageUrl(m.coverImageUrl)?`<img src="${esc(m.coverImageUrl)}" alt="Model example" referrerpolicy="no-referrer">`:''}<span class="eyebrow">REPLICATE / MODEL DETAILS</span><h3>${esc(m.name)}</h3><span class="micro">${esc(m.id)}</span><p>${esc(m.description)}</p><dl><dt>Runs</dt><dd>${m.runCount==null?'Not reported':Number(m.runCount).toLocaleString('en-US')}</dd><dt>Version</dt><dd>${esc(m.version?.slice(0,16)||'Not reported')}</dd><dt>Updated</dt><dd>${m.updatedAt?esc(new Date(m.updatedAt).toLocaleDateString('en-US')):'Not reported'}</dd><dt>Workflow</dt><dd>${workflowFor(m).hasPrompt?'Prompt-capable':'Input-based · no prompt'}</dd></dl><div class="model-links">${[['Provider',m.url],['License',m.licenseUrl],['Source',m.githubUrl],['Paper',m.paperUrl]].filter(([,url])=>safeImageUrl(url)).map(([label,url])=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`).join('')}</div><p class="helper">Pricing, hardware, and warm-state availability are not inferred. Check the provider page.</p>`:'<p>Load this model to see its current schema and metadata.</p>';
-  $('modelInfoPanel').querySelectorAll('img').forEach(i=>i.onerror=()=>i.hidden=true);
+  $('modelInfoPanel').innerHTML=m?`${modelVisual(m,'info')}<div class="model-info-copy"><span class="eyebrow">REPLICATE / MODEL DETAILS</span><h3>${esc(m.name)}</h3><span class="micro">${esc(m.id)}</span><p class="model-info-description">${esc(m.description)}</p><dl><dt>Runs</dt><dd>${m.runCount==null?'Not reported':Number(m.runCount).toLocaleString('en-US')}</dd><dt>Version</dt><dd>${esc(m.version?.slice(0,16)||'Not reported')}</dd><dt>Updated</dt><dd>${m.updatedAt?esc(new Date(m.updatedAt).toLocaleDateString('en-US')):'Not reported'}</dd><dt>Workflow</dt><dd>${workflowFor(m).hasPrompt?'Prompt-capable':'Input-based · no prompt'}</dd></dl><div class="model-links">${[['Provider',m.url],['License',m.licenseUrl],['Source',m.githubUrl],['Paper',m.paperUrl]].filter(([,url])=>safeImageUrl(url)).map(([label,url])=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${label} ↗</a>`).join('')}</div><p class="helper">Pricing, hardware, and warm-state availability are not inferred. Check the provider page.</p></div>`:'<p>Load this model to see its current schema and metadata.</p>';
+  $('modelInfoPanel').querySelectorAll('img').forEach(i=>i.onerror=()=>i.remove());
 }
 let infoTimer;
 function showModelInfo(open){clearTimeout(infoTimer);$('modelInfoPanel').hidden=!open;$('modelInfoChip').setAttribute('aria-expanded',String(open));if(open){const r=$('modelInfoChip').getBoundingClientRect(),box=$('modelInfoPanel');box.style.left=Math.max(12,Math.min(innerWidth-box.offsetWidth-12,r.left))+'px';box.style.top=Math.max(10,Math.min(innerHeight-box.offsetHeight-12,r.bottom+6))+'px';}}

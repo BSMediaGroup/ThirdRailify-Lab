@@ -1,5 +1,11 @@
 # Bump notes
 
+## 2026-09-13 — Model Explorer cover and card upgrade
+
+- Hydrated the four curated starter models through the same Replicate metadata route used by search and model details, so their current provider feature images render on initial modal load without hardcoded cover URLs.
+- Rebuilt result and detail presentation around square, cover-filled media canvases, refined responsive cards, violet/gold fallback artwork and compact provider/status details.
+- Added source-contract coverage plus rendered desktop/mobile checks for all four starter covers, square geometry, cover fitting, fallback colors, overflow and the selected-model detail card.
+
 ## 2026-09-13 — Search, stock, encrypted profiles and usage control room
 
 CURRENT VER=0.4.0
