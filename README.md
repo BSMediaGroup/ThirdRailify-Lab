@@ -22,6 +22,8 @@ poc/                     approved local baseline, preserved in place
 dist/                    generated allowlisted build output (ignored)
 ```
 
+The document toolbar keeps project and conversation actions together, with the Research Desk visibility toggle isolated at the far-right edge by a retained divider.
+
 ## Link previews
 
 Discord, X/Twitter, and other Open Graph clients receive the dedicated 1733×907 dark gold/violet `labseo.webp` card plus a concise title and description. Both the authenticated shell and the public login handoff publish the same canonical metadata because anonymous link crawlers follow the root login redirect. `/backgrounds/labseo.webp` is the only deliberately public social asset; it contains no account, project, or provider data and is packaged by the build allowlist.

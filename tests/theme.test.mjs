@@ -20,7 +20,7 @@ test('gold and muted-violet tokens own structural chrome while semantic colors r
 });
 
 test('workspace controls and icon semantics use their intended single locations', async () => {
-  const [html, icons] = await Promise.all([read('public/index.html'), read('public/icons.svg')]);
+  const [html, icons, theme] = await Promise.all([read('public/index.html'), read('public/icons.svg'), read('public/violet.css')]);
   assert.equal((html.match(/id="researchVisibility"/g) || []).length, 1);
   const researchHeader = html.slice(html.indexOf('<div class="research-heading">'), html.indexOf('<div class="research-tabs"'));
   assert.doesNotMatch(researchHeader, /researchVisibility|collapseResearch/);
@@ -33,4 +33,8 @@ test('workspace controls and icon semantics use their intended single locations'
   assert.match(icons, /id="workspace-layout"/);
   assert.match(icons, /id="panel-right"/);
   assert.match(icons, /id="palette"/);
+  const documentTools = html.slice(html.indexOf('<div class="document-tools">'), html.indexOf('</div>', html.indexOf('<div class="document-tools">')));
+  assert.ok(documentTools.indexOf('id="railPin"') < documentTools.indexOf('id="researchVisibility"'), 'Research Desk visibility belongs at the far-right end of the document toolbar');
+  assert.match(theme, /\.document-tools \.research-visibility\{border-left:1px solid var\(--line\)/);
+  assert.doesNotMatch(theme, /\.document-tools \.research-visibility\{border-right:/);
 });

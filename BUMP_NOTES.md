@@ -1,5 +1,10 @@
 # Bump notes
 
+## 2026-09-13 — Document toolbar alignment
+
+- Moved the Research Desk visibility toggle to the far-right end of the document toolbar while retaining a clear divider from project and conversation actions.
+- Added source-level order and divider regression coverage; no project, document, conversation or Research Desk behavior changed.
+
 ## 2026-09-12 — Cloudflare Pages Workshop
 
 CURRENT VER=0.4.0-poc (preserved local baseline)
