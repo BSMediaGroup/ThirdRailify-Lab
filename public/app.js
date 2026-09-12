@@ -764,10 +764,4 @@ function setupFinalUI(){
  window.addEventListener('storage',e=>{if(e.key===attachmentDraftKey())renderChatAttachmentTray();});
 }
 
-function reportRender(late=false){
- if(!state.config?.canManageProviders)return;
- const style=(selector,pseudo)=>getComputedStyle(document.querySelector(selector),pseudo);
- const values={border:style('.stage-shell').borderColor,logo:style('#brandMark','::before').backgroundImage,scheme:style('html').colorScheme,button:style('#generate').backgroundColor,stylesheet:[...document.styleSheets].some(s=>s.href&&new URL(s.href).pathname==='/lab.css'),darkReader:!!document.querySelector('style.darkreader,[data-darkreader-mode]'),forcedColors:matchMedia('(forced-colors: active)').matches,late};
- api('/api/render-check',{method:'POST',body:values}).catch(()=>{});
-}
-boot().then(()=>{reportRender();setTimeout(()=>reportRender(true),2500);}).catch(e=>{$('serverStatus').textContent='Workshop unavailable';error('The Workshop could not finish loading. '+e.message);});
+boot().catch(e=>{$('serverStatus').textContent='Workshop unavailable';error('The Workshop could not finish loading. '+e.message);});
