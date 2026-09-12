@@ -1,0 +1,13 @@
+# Bump notes
+
+## 2026-09-12 — Cloudflare Pages Workshop
+
+CURRENT VER=0.4.0-poc (preserved local baseline)
+
+PENDING VER=0.4.0 (new production root)
+
+- Added the allowlisted root build, Pages Functions, canonical account login and current Workshop access enforcement.
+- Retained the approved vanilla Studio/Research interface, actual brand fonts/logos, model adapters, composer and project workflows.
+- Added private Lab D1/R2 repositories, revision protection, persisted generation jobs, verified Replicate callbacks and an independent recovery-only cron helper.
+- Added real local D1/R2 and compiled Pages-runtime checks. Live release identifiers and acceptance are recorded in `docs/RELEASE.md`.
+- Preserved `poc/.env`, `.data`, projects, assets, launchers and concurrent repository work. No private POC projects were imported.
