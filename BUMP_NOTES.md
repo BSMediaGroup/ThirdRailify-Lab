@@ -1,5 +1,10 @@
 # Bump notes
 
+## 2026-09-13 — Stock-provider Connections branding
+
+- Added the supplied Pexels, Pixabay and Unsplash SVG marks to the allowlisted Lab build and exposed them through the existing provider-brand registry.
+- Connections and Settings now render the approved stock-provider marks instead of generic fallback glyphs; credential, profile and status behavior is unchanged.
+
 ## 2026-09-13 — Model Explorer cover and card upgrade
 
 - Hydrated the four curated starter models through the same Replicate metadata route used by search and model details, so their current provider feature images render on initial modal load without hardcoded cover URLs.

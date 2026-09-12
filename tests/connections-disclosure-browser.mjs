@@ -20,6 +20,16 @@ try{
     assert.equal(await summaries.count(),7);
     assert.equal(await summaries.evaluateAll(nodes=>nodes.every(node=>getComputedStyle(node,'::after').content==='none')),true);
     await page.screenshot({path:`${directory}/collapsed-${width}.png`});
+    const stockGroup=page.getByText('SEARCH & STOCK',{exact:true});
+    await stockGroup.scrollIntoViewIfNeeded();
+    for(const provider of ['Pexels','Pixabay','Unsplash']){
+      const card=page.locator('.provider-card').filter({has:page.locator('strong').filter({hasText:new RegExp(`^${provider}$`)})});
+      assert.equal(await card.count(),1,`${provider} has one Connections card`);
+      assert.match(await card.locator('.provider-logo').evaluate(node=>getComputedStyle(node).maskImage),new RegExp(`/brand-assets/${provider.toLowerCase()}\\.svg`));
+    }
+    await page.screenshot({path:`${directory}/stock-providers-${width}.png`});
+    await page.locator('.provider-card').filter({has:page.locator('strong').filter({hasText:/^Unsplash$/})}).scrollIntoViewIfNeeded();
+    await page.screenshot({path:`${directory}/stock-providers-lower-${width}.png`});
     const profiles=page.locator('.key-profile-scaffold > summary').first();
     await profiles.click();
     await page.waitForTimeout(250);

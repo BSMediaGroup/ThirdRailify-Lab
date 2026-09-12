@@ -38,3 +38,12 @@ test('workspace controls and icon semantics use their intended single locations'
   assert.match(theme, /\.document-tools \.research-visibility\{border-left:1px solid var\(--line\)/);
   assert.doesNotMatch(theme, /\.document-tools \.research-visibility\{border-right:/);
 });
+
+test('Connections publishes approved brand marks for every stock provider', async () => {
+  const [manifest, api, app] = await Promise.all([read('build-assets.json'), read('lib/api.mjs'), read('public/app.js')]);
+  for (const provider of ['pexels', 'pixabay', 'unsplash']) {
+    assert.match(manifest, new RegExp(`assets/icons/${provider}-0\\.svg.*brand-assets/${provider}\\.svg`));
+    assert.match(api, new RegExp(`${provider}:true`));
+    assert.match(app, new RegExp(`'${provider}'`));
+  }
+});
