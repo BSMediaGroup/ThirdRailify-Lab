@@ -28,6 +28,7 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
   await schema(env.LAB_DB,new URL('../migrations/0001_lab.sql',import.meta.url));
   await schema(env.LAB_DB,new URL('../migrations/0002_provider_vault_stock_usage.sql',import.meta.url));
   await schema(env.LAB_DB,new URL('../migrations/0003_provider_cost_intelligence.sql',import.meta.url));
+  await schema(env.LAB_DB,new URL('../migrations/0004_usage_classification_repair.sql',import.meta.url));
   await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0001_auth_foundation.sql',adminRoot));
   await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0002_full_admin_capability_denials.sql',adminRoot));
   await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0003_workshop_access.sql',adminRoot));

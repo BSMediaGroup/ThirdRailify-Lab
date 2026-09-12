@@ -21,6 +21,7 @@ lib/provider-pricing.mjs versioned official pricing catalog and immutable cost c
 migrations/0001_lab.sql  independent Lab base schema
 migrations/0002_provider_vault_stock_usage.sql  profile, usage, cache and attribution schema
 migrations/0003_provider_cost_intelligence.sql  logical operations, exact ticks and pricing provenance
+migrations/0004_usage_classification_repair.sql  deterministic non-inference deploy-window repair
 backend/                 scheduled recovery helper; no frontend, hostname or public endpoint
 scripts/                 build, checked provisioning and migration preparation
 tests/                   D1/R2, account, recovery and Pages-runtime browser checks

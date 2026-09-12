@@ -19,6 +19,7 @@ async function migration(db,url){let part='';for(const line of (await readFile(u
 await migration(env.LAB_DB,new URL('../migrations/0001_lab.sql',import.meta.url));
 await migration(env.LAB_DB,new URL('../migrations/0002_provider_vault_stock_usage.sql',import.meta.url));
 await migration(env.LAB_DB,new URL('../migrations/0003_provider_cost_intelligence.sql',import.meta.url));
+await migration(env.LAB_DB,new URL('../migrations/0004_usage_classification_repair.sql',import.meta.url));
 for(const name of ['0001_auth_foundation.sql','0002_full_admin_capability_denials.sql','0003_workshop_access.sql','0004_workshop_provider_profile_restrictions.sql'])await migration(env.THIRDRAILIFY_AUTH_DB,new URL('../../ThirdRailify-Admin/migrations/'+name,import.meta.url));
 await env.THIRDRAILIFY_AUTH_DB.prepare("INSERT INTO accounts(id,display_name,role,admin_level,status,created_at,updated_at,source) VALUES(?,'Workshop Test','admin','master','active','2026-01-01','2026-01-01','test')").bind(account.id).run();
 await env.THIRDRAILIFY_AUTH_DB.prepare('INSERT INTO sessions VALUES(?,?,?,?,?,?,?,?,?,?)').bind('browser-fixture',account.id,hash(token),hash(csrf),'2026-01-01','2099-01-01','2026-01-01',null,origin,null).run();
