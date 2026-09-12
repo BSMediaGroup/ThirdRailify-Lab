@@ -56,3 +56,14 @@ test('image provider selector uses approved monochrome marks that inherit label 
   }
   assert.match(controls, /\.provider-tab-icon\s*\{[\s\S]*background: currentColor/);
 });
+
+test('usage history exposes semantic chips, sortable resizable columns, quota bars, and USD labels', async () => {
+  const [app, controls] = await Promise.all([read('public/app.js'), read('public/control-room.css')]);
+  assert.match(app, /return 'US\$'\+amount\.toFixed/);
+  assert.match(app, /data-usage-sort=/);
+  assert.match(app, /data-usage-resize=/);
+  assert.match(app, /role="progressbar"/);
+  for (const tone of ['success', 'danger', 'warning', 'neutral']) assert.match(controls, new RegExp(`\\.usage-outcome\\.${tone}`));
+  assert.match(controls, /\.usage-resize-handle\s*\{/);
+  assert.match(controls, /\.usage-quota-track\s*\{/);
+});
