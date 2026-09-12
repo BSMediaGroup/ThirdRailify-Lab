@@ -28,3 +28,18 @@ Final repair checkpoint 2026-09-12: stable Lab Pages deployment a182fa25-f9d6-4e
 2026-09-12 prompt action alignment: grouped the reference attachment and Generate buttons into one non-wrapping action group. The helper text can wrap independently at narrow canvas widths. Removed the trailing Generate arrow from both initial markup and dynamic model rendering, retaining one leading icon. The account Admin shield now uses the gold theme color in the header and dropdown. POC files and generation behavior are unchanged.
 
 2026-09-12 favicon update: the allowlisted build now publishes the supplied assets/icons/labsfav.ico as /favicon.ico for all Lab pages. Login and Workshop favicon links include a version query to refresh the previous cached icon.
+
+## 2026-09-13 — Gold/violet Workshop and Google Images research
+
+CURRENT VER=0.4.0
+
+PENDING VER=0.4.0
+
+- Reworked the complete Lab visual system around dark charcoal, deep violet, restrained purple depth, metallic gold focus, and preserved semantic success/warning/error colors. The fifth compiled style layer covers Studio, Research, Compose, Library, Brand & Assets, Settings, dialogs, menus, inputs, empty states, and responsive layouts.
+- Removed the canvas phantom right strip by replacing the width-constraining 16:9/max-height combination with a width-owned responsive stage and explicit fullscreen flex sizing.
+- Moved the Research Desk show/hide control to the project-tab rail, retained popout/new-tab controls in the Research header, and replaced ambiguous View Options and Brand & Assets glyphs with purpose-built symbols.
+- Added the protected Google Custom Search JSON API image workflow with supported filters and pagination, safe unconfigured/provider/quota states, sanitized results, short-lived account/project-bound result tokens, private no-store responses, and independent search/thumbnail/import rate limits.
+- Added private R2 import with HTTPS-only signed sources, redirect revalidation, local/private/reserved literal-address denial, 10-second timeouts, 12 MB streaming limits, PNG/JPEG/WebP signature checks, and a 40-megapixel decoded-header limit where dimensions are available.
+- Added explicit image destinations: unsent Research Chat drafts, schema-aware generation references without silent model switching, and Compose with confirmation before replacing another base image. Search state and cross-window signals remain account/project scoped.
+- Kept Compose integration within its current single-base-image architecture. A future multi-layer/blend-mode editor remains deliberately deferred.
+- Expanded real local D1/R2 integration coverage and four-width browser evidence. Google credentials are deliberately not stored in the repository; production search remains unconfigured until both Pages settings are provisioned.

@@ -21,7 +21,7 @@ async function schema(db,path){const source=(await readFile(path,'utf8')).replac
 test('real local D1/R2: authority, revisions, isolation, webhook, recovery and fail-closed routes',async t=>{
   const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-01-20',d1Databases:['LAB_DB','THIRDRAILIFY_AUTH_DB'],r2Buckets:['LAB_FILES']});
   t.after(()=>mf.dispose());
-  const env=await mf.getBindings();env.LAB_JOBS={async send(){}};Object.assign(env,{LAB_ENABLED:'true',LAB_PAID_ENABLED:'true',LAB_ORIGIN:origin,REPLICATE_API_TOKEN:'local-fixture-token',REPLICATE_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('local-test-signature-key-32-bytes!').toString('base64')});
+  const env=await mf.getBindings();env.LAB_JOBS={async send(){}};Object.assign(env,{LAB_ENABLED:'true',LAB_PAID_ENABLED:'true',LAB_ORIGIN:origin,REPLICATE_API_TOKEN:'local-fixture-token',REPLICATE_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('local-test-signature-key-32-bytes!').toString('base64'),GOOGLE_CUSTOM_SEARCH_API_KEY:'fixture-google-key',GOOGLE_CUSTOM_SEARCH_CX:'fixture-google-cx'});
   await schema(env.LAB_DB,new URL('../migrations/0001_lab.sql',import.meta.url));
   await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0001_auth_foundation.sql',adminRoot));
   await schema(env.THIRDRAILIFY_AUTH_DB,new URL('migrations/0002_full_admin_capability_denials.sql',adminRoot));
@@ -50,6 +50,18 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
     await assert.rejects(api('b','/api/projects',{id:projectB,name:'forged ref',project:{assetId:asset.id},revision:1}),/not found/);
     await api('a','/api/projects',{id:projectA,name:'with image',project:{assetId:asset.id},revision:2});await assert.rejects(api('a',`/api/assets/${asset.id}/delete`,{}),/referenced/);
   });
+  await t.test('Google image search is bounded, signed, project-scoped and imports only a verified image to private storage',async()=>{
+    const originalFetch=globalThis.fetch;let requested;
+    try{
+      globalThis.fetch=async input=>{requested=String(input);if(requested.startsWith('https://customsearch.googleapis.com/'))return Response.json({items:[{title:'Fixture reference',link:'https://images.example/reference.png',mime:'image/png',image:{thumbnailLink:'https://images.example/thumb.png',contextLink:'https://example.com/story',width:1,height:1}}],queries:{nextPage:[{startIndex:11}]},searchInformation:{totalResults:'21'}});if(requested==='https://images.example/reference.png')return new Response(png,{headers:{'Content-Type':'image/png','Content-Length':String(png.length)}});throw new Error('unexpected outbound request '+requested);};
+      const response=await api('a','/api/research/images?projectId='+projectA+'&q=violet%20studio&safe=active&type=photo&size=large&color=color&dominant=purple&site=example.com');const text=await response.text();assert.doesNotMatch(text,/fixture-google-key/);const result=JSON.parse(text);assert.equal(result.items.length,1);assert.equal(result.nextStart,11);assert.match(requested,/searchType=image/);assert.match(requested,/imgDominantColor=purple/);assert.match(requested,/siteSearch=example.com/);
+      await assert.rejects(api('b','/api/research/images/import',{projectId:projectB,token:result.items[0].token}),/invalid or expired/);await assert.rejects(api('a','/api/research/images/import',{projectId:projectA,token:result.items[0].token.slice(0,-1)+'x'}),/invalid or expired/);
+      const imported=await (await api('a','/api/research/images/import',{projectId:projectA,token:result.items[0].token})).json();assert.equal(imported.asset.source,'google-images');assert.equal(imported.asset.sourceHostname,'example.com');assert.deepEqual(Buffer.from(await(await api('a',imported.asset.url)).arrayBuffer()),png);await assert.rejects(api('b',imported.asset.url),/not found/);
+      assert.equal((await env.LAB_DB.prepare("SELECT count(*) AS n FROM rate_limits WHERE subject='a' AND category='image_search'").first()).n,1);
+      const key=env.GOOGLE_CUSTOM_SEARCH_API_KEY,cx=env.GOOGLE_CUSTOM_SEARCH_CX;delete env.GOOGLE_CUSTOM_SEARCH_API_KEY;delete env.GOOGLE_CUSTOM_SEARCH_CX;await assert.rejects(api('a','/api/research/images?projectId='+projectA+'&q=test'),/not configured/);env.GOOGLE_CUSTOM_SEARCH_API_KEY=key;env.GOOGLE_CUSTOM_SEARCH_CX=cx;
+      await assert.rejects(api('a','/api/research/images?projectId='+projectA+'&q=test&type=wallpaper'),/Unsupported image type/);await assert.rejects(api('a','/api/research/images?projectId='+projectA+'&q=test&start=92'),/outside Google/);
+    }finally{globalThis.fetch=originalFetch;}
+  });
   let job;
   await t.test('prompt-free job persisted once, replay conflict, callback before response and duplicates',async()=>{
     const provider={key(){return 'fixture';},async model(){return{id:'fixture/prompt-free',version:'a'.repeat(64),schema:{type:'object',properties:{},required:[]},official:false};}};
@@ -62,7 +74,7 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
   await t.test('unknown API is JSON; preview and missing config never serve static protected content',async()=>{
     await assert.rejects(api('a','/api/unknown'),/not found/);let served=false;const next=()=>{served=true;return new Response('private');};let r=await onRequest({env:{},request:new Request(origin+'/'),next});assert.equal(r.status,503);assert.equal(served,false);
     r=await onRequest({env,request:new Request('https://immutable.thirdrailify-lab.pages.dev/'),next});assert.equal(r.status,503);assert.equal(served,false);
-    r=await onRequest({env,request:new Request(origin+'/app.js'),next});assert.equal(r.status,401);assert.equal(served,false);assert.equal(r.headers.get('X-Frame-Options'),'DENY');
+    r=await onRequest({env,request:new Request(origin+'/app.js'),next});assert.equal(r.status,401);assert.equal(served,false);assert.equal(r.headers.get('X-Frame-Options'),'DENY');r=await onRequest({env,request:new Request(origin+'/api/research/images?projectId='+projectA+'&q=test'),next});assert.equal(r.status,401);assert.match(r.headers.get('content-type'),/application\/json/);
   });
   await t.test('Pages canonical login and existing OAuth callback paths reach the login gate',async()=>{
     for(const path of ['/login','/login.html']){const r=await onRequest({env,request:new Request(origin+path),next:()=>new Response('login fixture')});assert.equal(r.status,200);assert.equal(await r.text(),'login fixture');}
