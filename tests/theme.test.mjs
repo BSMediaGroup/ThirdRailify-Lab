@@ -48,13 +48,14 @@ test('Connections publishes approved brand marks for every stock provider', asyn
   }
 });
 
-test('image provider selector uses approved monochrome marks that inherit label color', async () => {
-  const [html, controls] = await Promise.all([read('public/index.html'), read('public/control-room.css')]);
-  for (const [provider, icon] of [['replicate', 'replicate-0'], ['openai', 'gpt-0'], ['xai', 'grok-0']]) {
+test('image provider selector uses published approved marks rendered in white', async () => {
+  const [html, controls, assets] = await Promise.all([read('public/index.html'), read('public/control-room.css'), read('build-assets.json')]);
+  for (const [provider, icon] of [['replicate', 'replicate'], ['openai', 'openai'], ['xai', 'xai']]) {
     assert.match(html, new RegExp(`data-provider="${provider}"[\\s\\S]{0,220}provider-tab-icon--${provider}`));
-    assert.match(controls, new RegExp(`provider-tab-icon--${provider}[\\s\\S]{0,140}${icon}\\.svg`));
+    assert.match(controls, new RegExp(`provider-tab-icon--${provider}[\\s\\S]{0,140}/brand-assets/${icon}\\.svg`));
   }
-  assert.match(controls, /\.provider-tab-icon\s*\{[\s\S]*background: currentColor/);
+  assert.match(assets, /"assets\/icons\/gpt-0\.svg": "brand-assets\/openai\.svg"/);
+  assert.match(controls, /\.provider-tab-icon\s*\{[\s\S]*background: #fff/);
 });
 
 test('usage history exposes semantic chips, sortable resizable columns, quota bars, and USD labels', async () => {
@@ -66,4 +67,10 @@ test('usage history exposes semantic chips, sortable resizable columns, quota ba
   for (const tone of ['success', 'danger', 'warning', 'neutral']) assert.match(controls, new RegExp(`\\.usage-outcome\\.${tone}`));
   assert.match(controls, /\.usage-resize-handle\s*\{/);
   assert.match(controls, /\.usage-quota-track\s*\{/);
+});
+
+test('Research Desk stock filters keep the SafeSearch checkbox compact', async () => {
+  const controls = await read('public/violet.css');
+  assert.match(controls, /\.image-filters input:not\(\[type=checkbox\]\)/);
+  assert.match(controls, /\.image-filters \.check-field input\[type=checkbox\]\{width:14px;height:14px;min-width:14px;min-height:14px/);
 });

@@ -204,7 +204,7 @@
   .usage-line,.usage-area,.usage-point { animation: none; opacity: 1; stroke-dashoffset: 0; transform: none; }
 }
 
-/* Provider marks inherit the selector label color in every button state. */
+/* Keep provider marks crisp and neutral beside the selector labels. */
 .provider-tabs button {
   display: inline-flex;
   align-items: center;
@@ -215,7 +215,7 @@
   width: 12px;
   height: 12px;
   flex: 0 0 12px;
-  background: currentColor;
+  background: #fff;
   -webkit-mask-position: center;
   mask-position: center;
   -webkit-mask-repeat: no-repeat;
@@ -224,14 +224,14 @@
   mask-size: contain;
 }
 .provider-tab-icon--replicate {
-  -webkit-mask-image: url('/assets/icons/replicate-0.svg');
-  mask-image: url('/assets/icons/replicate-0.svg');
+  -webkit-mask-image: url('/brand-assets/replicate.svg');
+  mask-image: url('/brand-assets/replicate.svg');
 }
 .provider-tab-icon--openai {
-  -webkit-mask-image: url('/assets/icons/gpt-0.svg');
-  mask-image: url('/assets/icons/gpt-0.svg');
+  -webkit-mask-image: url('/brand-assets/openai.svg');
+  mask-image: url('/brand-assets/openai.svg');
 }
 .provider-tab-icon--xai {
-  -webkit-mask-image: url('/assets/icons/grok-0.svg');
-  mask-image: url('/assets/icons/grok-0.svg');
+  -webkit-mask-image: url('/brand-assets/xai.svg');
+  mask-image: url('/brand-assets/xai.svg');
 }
