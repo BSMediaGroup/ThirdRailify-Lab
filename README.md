@@ -24,7 +24,7 @@ dist/                    generated allowlisted build output (ignored)
 
 ## Link previews
 
-Discord, X/Twitter, and other Open Graph clients receive a dedicated 1200×630 dark gold/violet social card plus a concise title and description. Both the authenticated shell and the public login handoff publish the same canonical metadata because anonymous link crawlers follow the root login redirect. `/social/lab-social-card-v1.png` is the only deliberately public social asset; it contains no account, project, or provider data and is packaged by the build allowlist.
+Discord, X/Twitter, and other Open Graph clients receive the dedicated 1733×907 dark gold/violet `labseo.webp` card plus a concise title and description. Both the authenticated shell and the public login handoff publish the same canonical metadata because anonymous link crawlers follow the root login redirect. `/backgrounds/labseo.webp` is the only deliberately public social asset; it contains no account, project, or provider data and is packaged by the build allowlist.
 
 ## Identity and private data
 
