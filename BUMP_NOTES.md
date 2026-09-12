@@ -1,5 +1,13 @@
 # Bump notes
 
+## 2026-09-13 — Strict-CSP Google Images native renderer
+
+- Fixed the live Google Images failure at its actual boundary: the old documented `image.ready` callback returned `false`, allowing Google Programmable Search Element's eval-dependent default image template renderer to run under the Lab CSP.
+- Added a safe native gold/violet renderer for Google's documented image result and promotion objects. The callback now renders into `resultsDiv` and returns `true`, while Google continues to its footer/branding work. The existing CX, Standard Search Element, filters, protected import route, SSRF limits, and Chat/Reference/Compose/Source destinations are unchanged.
+- Bound every result to account, project, Search Element instance, query generation, activity, and an internal result ID. Late callbacks after a project switch cannot populate or act on the new project.
+- Kept the main document CSP unchanged with no `unsafe-eval`; an isolated-frame fallback was not needed. Added bounded metadata-only CSP reporting and native loading, empty, malformed-result, provider-timeout/challenge, callback-failure, and thumbnail-fallback states.
+- Added focused source/runtime tests and a headed Chromium sweep at 1920, 1440, 768, and 390 plus Research popout. The test Search Element attempts its default `eval()` renderer unless `ready` returns `true`, proving the supported bypass under the production CSP.
+
 ## 2026-09-13 — Provider cost intelligence and premium usage history
 
 CURRENT VER=0.5.0

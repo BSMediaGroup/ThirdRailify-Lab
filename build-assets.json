@@ -1,6 +1,7 @@
 {
   "public/index.html": "index.html",
   "public/app.js": "app.js",
+  "public/google-image-renderer.js": "google-image-renderer.js",
   "public/icons.svg": "icons.svg",
   "public/model-schema.js": "model-schema.js",
   "public/canvas-view.js": "canvas-view.js",
