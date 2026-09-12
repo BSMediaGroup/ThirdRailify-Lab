@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 try {
   const manifest = JSON.parse(await readFile(path.join(root, 'PACKAGE-MANIFEST.json'), 'utf8'));
-  if (manifest.version !== '0.3.0-poc' || !Array.isArray(manifest.files)) throw new Error('Invalid release manifest.');
+  if (manifest.version !== '0.4.0-poc' || !Array.isArray(manifest.files)) throw new Error('Invalid release manifest.');
   const failures = [];
   for (const entry of manifest.files) {
     const name = entry.path;

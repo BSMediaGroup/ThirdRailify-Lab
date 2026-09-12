@@ -75,3 +75,17 @@ This POC is local-only. Shared Admin-account approvals, Turnstile, durable hoste
 - This release is one complete cumulative ZIP, not an eight-file patch: includes unchanged style.css, upgrade.css, brand/models modules and the Windows launcher alongside all updated files.
 - Updated package version, README tree, setup/update/testing records, and added a SHA-256 package manifest plus optional read-only verifier. No runtime dependency installation or build step.
 - Current validation and exact overwrite/fresh-install checks are recorded in docs/TESTING.md. Provider responses in automated tests are simulated; no paid live generation or production login is claimed.
+
+
+## CURRENT VER= 0.4.0-poc / PENDING VER= Not assigned
+
+### Final interface/research pass and complete cumulative delivery
+
+- Redesigned Connections and Settings with provider-specific local SVG masks, honest key/authentication statuses, and intentionally deferred multiple-key controls. Exact OpenAI local icon spelling `opanai.svg` is preserved.
+- Added per-model research instructions, real Responses web/search/analysis tool payloads, multimodal image/document attachments, bounded provider file cleanup, safe Markdown, returned sources/usage, and supported analysis downloads. Unsupported provider capabilities remain explicit errors.
+- Added Studio reference attachment targeting and direct-provider image-edit adapters; prompt-free Replicate workflows remain unchanged.
+- Added centered, view-only image zoom/fit/pan/reset/window-lock controls. Fixed a CSS inset conflict exposed by geometric browser acceptance. No original image/export pixel transformation is caused by view controls.
+- Icon-only navigation, dark tooltips, clearer eyebrow labels, corrected cog, layout-menu icons, targeted small-text readability, Library Rename, and designed Brand & Assets scaffold.
+- Preserved ordinary second-turn research with empty assistant attachments; saved project/image/credential compatibility retained. Added 24 tests to the prior 39: 63 total passed.
+- Complete ZIP includes all prior runtime files and new modules/styles/tests/docs. No `.env`, `.data`, user assets, font binaries or repository metadata. Updated metadata/manifest and clean/overwrite installation verification included in this release.
+- No production deployment, remote mutation or live paid provider inference. Native cross-window navigation is not verified by the bridged browser test environment.

@@ -1,0 +1,43 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "thirdrailify-lab-recovery",
+  "main": "recovery.mjs",
+  "compatibility_date": "2026-09-12",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "d1_databases": [
+    {
+      "binding": "LAB_DB",
+      "database_name": "thirdrailify-lab",
+      "database_id": "24a3ce74-c56b-4788-87a8-8d5b6da3f886",
+      "migrations_dir": "../migrations"
+    },
+    {
+      "binding": "THIRDRAILIFY_AUTH_DB",
+      "database_name": "thirdrailify-accounts",
+      "database_id": "b8be3879-7aa1-4d70-af3f-617abce7a929"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "LAB_FILES",
+      "bucket_name": "thirdrailify-lab-private"
+    }
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "vars": {
+    "LAB_ENABLED": "true",
+    "LAB_PAID_ENABLED": "true",
+    "LAB_ORIGIN": "https://lab.thirdrailify.com"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -84,7 +84,7 @@ test('Responses chat streams only actual text deltas; no fabricated reasoning',a
  const root=await mkdtemp(path.join(os.tmpdir(),'lab-chat-'));let app;
  try{
   await writeFile(path.join(root,'.env'),'OPENAI_API_KEY=openai-test\n');
-  app=await createLab({root,discoverBrand:false,fetchImpl:async(url,options)=>{assert.ok(url.endsWith('/responses'));const b=JSON.parse(options.body);assert.equal(b.stream,true);assert.equal(b.store,false);assert.equal(b.tools,undefined);return new Response('data: {"type":"response.output_text.delta","delta":"Actual text"}\n\ndata: {"type":"response.completed"}\n\n',{headers:{'Content-Type':'text/event-stream'}});}});
+  app=await createLab({root,discoverBrand:false,fetchImpl:async(url,options)=>{assert.ok(url.endsWith('/responses'));const b=JSON.parse(options.body);assert.equal(b.stream,true);assert.equal(b.store,false);assert.deepEqual(b.tools.map(t=>t.type),['web_search','code_interpreter']);return new Response('data: {"type":"response.output_text.delta","delta":"Actual text"}\n\ndata: {"type":"response.completed"}\n\n',{headers:{'Content-Type':'text/event-stream'}});}});
   const port=await app.start(0),base=`http://127.0.0.1:${port}`,init=await(await fetch(base+'/api/state')).json();
   const r=await fetch(base+'/api/chat',{method:'POST',headers:{Origin:base,'Content-Type':'application/json','X-Lab-CSRF':init.csrf},body:JSON.stringify({provider:'openai',model:'gpt-6-fixture',messages:[{role:'user',content:'Hello'}]})});const text=await r.text();assert.match(text,/Actual text/);assert.match(text,/event: done/);
  }finally{if(app)await app.close();await rm(root,{recursive:true,force:true});}
