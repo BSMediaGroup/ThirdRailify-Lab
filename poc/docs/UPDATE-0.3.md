@@ -1,3 +1,5 @@
+> Historical UPDATE-0 record. Current release: [0.4 update](UPDATE-0.4.md) and [testing](TESTING.md).
+
 # Install the complete 0.3.0 POC update
 
 This ZIP contains the entire application. Do not install individual files or layer

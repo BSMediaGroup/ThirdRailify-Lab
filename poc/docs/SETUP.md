@@ -1,252 +1,112 @@
-# Third Railify Lab — complete setup
+# ThirdRailify Lab — setup and operation
+## Complete local POC 0.4.0-poc
 
-Updated 11 September 2026 for 0.3.0-poc. This guide concerns the downloadable local POC, not an already hosted service.
+### 1. Run the local app
 
-For an existing POC installation, the complete overwrite procedure is in [UPDATE-0.3.md](UPDATE-0.3.md). Existing `.env` and `.data` are kept; the webhook secret remains optional.
+Extract ZIP contents directly into `X:\GIT\ThirdRailify-Lab\poc`. For an update, stop the previous console first and merge/replace application files without deleting the folder. Node 22 or newer must be installed. Double-click `START-LAB.cmd`, then use `http://127.0.0.1:4317`. No dependency installation or build is required. Keep the console open.
 
-## 1. Put the POC in the correct folder
+The launcher calls `node.exe` directly, not PowerShell's blocked `npm.ps1`. It does not change execution policy. To stop, press Ctrl+C in the Lab console. A submitted provider generation may continue; stopping the Lab is not a refund or a cancellation.
 
-1. Download the supplied ZIP.
-2. In File Explorer open `X:\GIT\ThirdRailify-Lab\poc`, where you saved the previous POC. Stop its console with Ctrl+C first.
-3. Copy/extract the ZIP's **contents** into that directory. Merge application files into the existing directory; keep your `.env`, `.data`, assets and repository `.git` directory. None are replaced by this update archive. The correct result is `X:\GIT\ThirdRailify-Lab\poc\START-LAB.cmd`.
-4. Do not paste source files into the Public, Admin or Bot repository.
-5. Double-click **START-LAB.cmd**. It checks Node 22+, opens the browser and runs in its visible console. You do not need `npm install`, a build, PowerShell execution-policy changes or an additional Python environment.
-6. Use `http://127.0.0.1:4317`. Keep the console running; Ctrl+C stops it.
+### 2. Preserve configuration
 
-Your previous machine logs already showed Node installed. If the launcher reports Node missing/too old, install a supported Node release from [nodejs.org](https://nodejs.org/en/download), then close and reopen the launcher. Do not replace working project-specific toolchains in other repositories for this POC.
+On an update, leave `.env` and `.data` in place. No new variables are required. The app reads its own `.env` before inherited environment values. There is no need to maintain duplicate permanent Windows variables.
 
-To launch from your current PowerShell instead of File Explorer, these are the only commands needed:
+For a new install, use the in-app Connections dialog. Alternatively copy `.env.example` to `.env` once and fill the provider-issued keys privately. Do not overwrite an existing `.env` with the example file.
 
-```powershell
-Set-Location 'X:\GIT\ThirdRailify-Lab\poc'
-.\START-LAB.cmd
-```
+### 3. Connect Replicate
 
-## 2. Review the interface before connecting billing
+1. Sign in at https://replicate.com and check your billing/credits.
+2. Open https://replicate.com/account/api-tokens and create a dedicated Lab token.
+3. In Connections paste it into Replicate, click Save connections, then Test.
+4. Select Replicate in Create, search a model or enter an owner/model reference, and load its real input schema.
+5. Fill required fields, review the model's pricing/license, and click Generate or Run model once.
 
-1. Click **Try a layout**. This makes a local procedural background; it does not call any AI provider.
-2. Choose **Compose** in the left rail.
-3. Edit the headline, secondary text, badge, colors and output size. Drag the headline on the canvas or use the position controls.
-4. Use **Fit / no crop** to preserve the entire background; **Fill / crop** is a deliberate alternative.
-5. Click **Save session**, then **Export** to generate a PNG or JPEG. Export also saves a local asset.
-6. Open **Library** to reopen the project or inspect outputs.
-7. Drag the boundary beside Research desk to resize it, or use its collapse button. A focused resize handle responds to arrow keys, Shift+arrow for larger steps, Home/End for minimum/maximum, and double-click to reset. The maximum follows the actual viewport rather than a fixed 560px limit. Collapse the left controls for more available width.
+`REPLICATE_API_TOKEN` is provider-issued, not a random locally invented secret. Blank key fields keep saved keys. Provider catalog requests and authentication tests do not create image generations.
 
-The right AI chat and Google tabs are separate from image generation. Selecting Grok for chat does not switch the image provider, and vice versa.
+The local server polls prediction status and copies supported image output bytes into `.data/assets`. Keep it running until local saving finishes. A generation's provider record link can help investigate uncertain submission/network failures before retrying and incurring another charge. Existing download retry resumes output saving rather than generation.
 
-## 3. Get the Replicate API token
+### 4. Connect OpenAI/GPT and Grok
 
-1. Sign in to [Replicate](https://replicate.com/).
-2. In your account, review billing/credits and enable the billing required for the models you intend to run. Check the chosen model's pricing before a paid test.
-3. Open [Replicate API tokens](https://replicate.com/account/api-tokens).
-4. Create a dedicated token named something recognizable, such as **ThirdRailify Lab Local**. Use the token Replicate issues; this is not a random secret you invent yourself.
-5. Copy the token privately. Do not post it in this chat, Git, screenshots or a shared document.
-6. In the Lab click **Connections**. Paste it into **Replicate API token**.
-7. Click **Save connections**. The local server writes `REPLICATE_API_TOKEN` into `X:\GIT\ThirdRailify-Lab\poc\.env`. You do not have to edit `.env` manually or set Windows user environment variables.
-8. Click the Replicate **Test** action. This authenticates against the account endpoint; it does not create a prediction.
+For OpenAI, create an API project key at https://platform.openai.com/api-keys and verify API billing/model access. Save it as `OPENAI_API_KEY` in Connections. For Grok, use https://console.x.ai/ to create/select the team API key and funding, then save `XAI_API_KEY`.
 
-An authentication test is not a guarantee that every paid/private model is available to the account. Model access, billing and input validity are checked on real requests. Reference: [Replicate token documentation](https://replicate.com/docs/topics/security/api-tokens).
+Image and chat model dropdowns load provider-returned catalog lists. OpenAI's catalog is not a detailed capability schema; compatible IDs are filtered, but the actual provider is authoritative for tool, parameter and account access. Catalog failures are explicit or labelled cached/saved fallback. The app does not invent account balances.
 
-## 4. Make the first Replicate image
+Images through Replicate and research through GPT/Grok are independent choices. Direct-provider model selections are optional saved defaults. Model names in fixtures/documentation are not guarantees of current API availability.
 
-1. Select **Replicate** in the Image provider control.
-2. Open the model picker. Start with **FLUX.1 Schnell** for a simple text-to-image test, or load another compatible model.
-3. Click **Load model controls** if the controls are not loaded yet. The Lab requests the model's actual input schema; it does not use a made-up common settings list.
-4. Set an aspect ratio using the fields actually supported by that model. Set a single output for your first test where the model offers an output-count field.
-5. For a text model, enter a prompt. For an input-only model, attach its required images/other inputs instead; the central workspace exposes **Run model** and does not require unrelated text.
-6. Review the chosen model's external page/pricing. Click **Generate** or **Run model** once, as appropriate. This submits a billable provider request.
-7. Watch the real queued/starting/processing/saving states. There is no invented percentage counter.
-8. When successful, inspect the image and use **Compose thumbnail** or download the original.
-9. Keep the server open while it downloads the output to `.data/assets`.
+### 5. Research context, tools and attachments
 
-The picker supports named-model search and pasting an exact Replicate model URL or `owner/model` reference. Explicit `owner/model:64-character-version` references are supported. Search results are not a promise that every returned model is an image model supported by this prototype. Verify its purpose and license on the provider page.
+Select the research provider/model and open **Context & tools**. Instructions are saved separately per provider/model in `.data/state.json`.
 
-Common enums, numbers, booleans, text and JSON fields come from the schema. Compatible image URI fields offer local reference upload and thumbnail previews; larger/specialized nested input schemas may need **Advanced input JSON**. Reference uploads are included only when you submit Generate. They are not automatically sent to an unrelated provider.
+- Web search: OpenAI/Grok Responses API tool.
+- Code & data analysis: provider-hosted `code_interpreter` tool; no local arbitrary-code execution.
+- Grok also exposes X search and page-image/image-search options.
+- Reasoning effort and image detail are optional explicit settings. Provider default is safest for model portability.
+- Leave output budget blank to omit an app-level output cap. Provider limits and billing still apply.
 
-Current limits: two running jobs, six queued/running jobs total, up to eight extracted output file URLs, 32 MB per saved provider image. The UI does not compute a guaranteed cross-model price. No generation-POST retry occurs automatically after an uncertain network response.
+Tools are requested, not guaranteed to be invoked. Unsupported settings return an explicit provider error without silent model switches or feature removal. Search sources, tool activity, usage and generated-file links are based on returned evidence, not fake thinking/search animations. Hidden chain-of-thought is not displayed.
 
-API contract: [Replicate HTTP API](https://replicate.com/docs/reference/http).
+Use the paperclip to attach PNG/JPEG/WebP, PDFs, or supported UTF-8 text/code files (TXT, MD, CSV, JSON, JS, MJS, TS, TSX, JSX, PY, JAVA, C, CPP, H, CS, HTML, CSS, XML, YAML/YML, SQL, LOG, SH, PS1). Maximum eight files per message, 16 MB per file, and 64 MB of distinct attachments per conversation request. Audio/video/ZIP/Office binaries are not supported in this POC.
 
-## 5. Local output persistence and failed requests
+Images are sent as actual image inputs. Documents use provider Files endpoints; temporary remote files are reused within a request and deletion is attempted afterward, including on stop/error. Check cleanup warnings. Local files stay in `.data/attachments`; deleting a conversation is not a local file purge or a provider-retention guarantee. Documents can be resent as part of subsequent conversation turns. Only share files you authorize the selected provider to process.
 
-The original bytes are saved locally, not just their temporary provider links. Replicate documents that API prediction inputs/outputs/logs are removed after an hour by default, so leaving everything as remote hotlinks is unsuitable for a durable image library. See [output files](https://replicate.com/docs/topics/predictions/output-files).
+OpenAI container-file citations are downloaded to local files where supported. Grok returned source/output links remain provider links unless supported by the implemented adapter. Unsupported output formats are not represented as successfully saved local files. Stop preserves partial returned text.
 
-- **Keep the server running** until output saving finishes.
-- **Retry download** re-reads an existing known Replicate prediction. It does not create a new generation.
-- Known pending Replicate prediction IDs resume checking after a server restart.
-- Interrupted direct OpenAI/Grok image requests cannot reliably resume or cancel through this POC.
-- **Submission uncertain** means a network interruption may have occurred after the provider accepted the request. Check its dashboard before creating another paid generation.
-- Downloaded files remain in `.data/assets` independently of provider retention.
-- If provider files expired before the local server saved them, a retry cannot reconstruct deleted provider output.
+### 6. Image references and canvas controls
 
-Do not delete `.data` to troubleshoot without backing it up. Imported images, projects and outputs are private local data, not checked into Git.
+The Studio paperclip chooses a real Replicate image-input field. Multiple image fields open a field picker, so a reference is not sent to the wrong parameter. Prompt-free image models do not require an unrelated prompt. For direct GPT/Grok image editing, select images using the same paperclip, then give the editing instruction in the prompt.
 
-## 6. Add GPT / OpenAI (optional)
+References are saved locally before submission. Schema-required fields remain authoritative. Models with complex/non-image outputs may need a future specialized adapter. The app does not bypass provider moderation or license restrictions.
 
-1. Sign in to the [OpenAI API platform](https://platform.openai.com/).
-2. Select the appropriate API project, enable its required billing and review limits.
-3. Create a project API key at [API keys](https://platform.openai.com/api-keys). Use a dedicated Lab key where possible.
-4. Paste it into **Connections → OpenAI API key** and **Save connections**.
-5. Click **Test** to verify model-list authentication. Account permissions can still prevent a selected model from running.
-6. Select **GPT** in the image-provider selector and generate an image, or select **GPT / OpenAI** in the chat sidebar and send a message.
+Canvas default: centered, width-fit, growing to show the full image height. Header controls provide zoom, height-fit, contain, pan, reset, and window-height lock. Fullscreen uses the available display area. These controls change only the view. Composer dimensions and exported original pixels are unchanged. In Compose, image fit/crop is a deliberate composition setting, separate from view zoom.
 
-The image and chat model dropdowns populate from the OpenAI catalog available to your API key. Refresh reloads that list; no manual model-name entry is required. Connections uses the same catalogs for optional saved defaults. The list supplies IDs rather than complete endpoint capabilities, so specialized models/options may still return a compatibility or access error on submission. Reference: [list models](https://developers.openai.com/api/reference/resources/models/methods/list).
+### 7. Projects, Library and research windows
 
-The direct image adapter uses the Images API. Chat uses the Responses API and streams response text. The POC does not request hidden reasoning or claim live web search. Direct OpenAI image editing is not included yet; use a compatible Replicate reference-image model for that workflow.
+Studio and Research share each document tab. Save persists settings, image references, both provider conversations, drafts, and attachment references together. Working tabs remain in the existing browser storage. Use the same hostname/port/browser profile to recover them. Saving also writes the project to disk.
 
-Official references: [quickstart](https://developers.openai.com/api/docs/quickstart), [image generation](https://developers.openai.com/api/docs/guides/image-generation).
+Close uses a confirmation; closing is different from deleting a saved record. New/discard work opens a clean project without deleting prior saved data. Library is the fallback when all tabs close. Rename changes the saved title while retaining project contents. Project/history deletion retains image files; image deletion is separate and blocked for saved references.
 
-## 7. Add Grok / SpaceXAI (optional)
+The header layout menu includes pane visibility, research window/new-tab, rail auto-hide and panel reset. Auto-hidden rail overlays content without moving it on reveal. Left and right panes resize independently within viewport limits. Research model controls collapse to maximize conversation space.
 
-1. Sign in to the [SpaceXAI console](https://console.x.ai/).
-2. Select your team, configure credits/billing and review its API limits.
-3. Create a dedicated API key in the console's API-key area.
-4. Paste it into **Connections → Grok / SpaceXAI API key** and save.
-5. Click **Test**, then choose **Grok** for images or the chat provider.
+Detached research uses existing same-origin browser storage and a BroadcastChannel. Browser pop-up settings and host/profile differences can affect it. The test environment could not verify native window navigation; preserve the same local address/profile and open via the app's controls.
 
-Image and chat models populate independently from Grok's typed provider catalogs. Use their dropdowns and refresh icons; the app does not require you to guess IDs. Existing saved .env choices are preserved as preferences, not treated as a guarantee of access. Reference: [model catalogs](https://docs.x.ai/developers/rest-api-reference/inference/models).
+### 8. Brand assets
 
-Image generation uses the direct SpaceXAI image endpoint, not the Replicate token. The returned base64 image is saved locally. Chat and image keys are the same provider key but the two provider selections are independent.
+No font binaries or user logo assets are shipped. The app reads existing files from `poc/assets`, parent Lab `assets`, then sibling ThirdRailify/Public and Admin assets.
 
-Official references: [quickstart](https://docs.x.ai/developers/quickstart), [image generation](https://docs.x.ai/developers/model-capabilities/images/generation).
+Heading: `assets/fonts/headings/American Captain.ttf` or `.otf`.
+Header: `assets/logos/labs0.svg`.
+Provider icons: `assets/icons/replicate-0.svg`, `assets/icons/opanai.svg`, `assets/icons/grok-0.svg`.
 
-## 8. Exactly what is stored where
+Provider SVGs are masked to inherit title color. Missing files show an initial and local-path diagnostics. Restart after adding assets. Brand & Assets previews a future reusable library; no fictional inventories are displayed and management remains disabled. Normal Library is operational.
 
-| Setting | Where it goes | Required for this POC? |
-|---|---|---|
-| `REPLICATE_API_TOKEN` | Lab `.env`, server-side only | For Replicate generation/lookup |
-| `OPENAI_API_KEY` | Lab `.env`, server-side only | Only for GPT images/chat |
-| `XAI_API_KEY` | Lab `.env`, server-side only | Only for Grok images/chat |
-| `OPENAI_IMAGE_MODEL`, `OPENAI_CHAT_MODEL` | Lab `.env` | Defaults supplied; editable |
-| `XAI_IMAGE_MODEL`, `XAI_CHAT_MODEL` | Lab `.env` | Defaults supplied; editable |
-| `REPLICATE_WEBHOOK_SIGNING_SECRET` | Lab `.env`, server-side only | **Not required** for local polling |
-| `PORT` | Lab `.env` | Defaults to 4317 |
+### 9. Webhooks — not required locally
 
-The `.env` beside `server.mjs` wins over old Windows environment variables. Blank key inputs preserve existing values. This avoids the earlier confusion between shell variables, permanent Windows variables and an empty repository `.env`.
+Leave `REPLICATE_WEBHOOK_SIGNING_SECRET` blank. The POC uses server-side status polling and needs no public callback or tunnel.
 
-To remove a key, stop the Lab, remove its line from `.env`, then relaunch. Keys are not encrypted at rest in this local POC. Do not use the workstation as a shared multi-user server. Never prefix these keys with `VITE_` or put them in `public/`.
+Connections can retrieve Replicate's issued signing secret through the existing authenticated API and write it to `.env`, for later hosted preparation only. Retrieving it does not create a callback service. Do not invent a webhook signing key or expose this local server.
 
-## 9. Replicate webhooks: nothing required locally
+Future hosted sequence: implement the secured Lab/account gates and durable owned jobs, deploy a real HTTPS callback, store provider credentials and issued signing secret in encrypted server-side bindings, include the callback when creating predictions, verify raw-body signatures/timestamps, deduplicate delivery and save outputs privately. The included webhook helper is not an active public route.
 
-**Do not create a tunnel or configure a callback just to run this POC.** The local server queries the prediction status itself and copies completed images. Replicate cannot call your private loopback address from the internet.
+### 10. Security and deferred production work
 
-For the future hosted service, Replicate's callback URL is supplied in each prediction request. It is not a generic “register one webhook and all predictions appear” assumption. The callback needs HTTPS and must not depend on an interactive user login or a redirect. See [webhooks](https://replicate.com/docs/topics/webhooks).
+Single user, loopback-only server with Host/Origin/CSRF protections, but no production authentication or account authorization. Keys are plaintext local `.env`, not encrypted, and local assets/documents are not encrypted. Keep the directory private. Do not upload `.env` or `.data` to Git.
 
-### Optional: retrieve the correct signing secret now
+No Cloudflare attachment, custom-domain change, DNS mutation, remote migration or real transaction is performed by this POC. Production must later reuse Third Railify account/approval/Turnstile authority with proper per-account jobs, storage, quotas, audit and secure key profiles.
 
-1. Save and test the Replicate API token first.
-2. In Connections, open the webhook-preparation area.
-3. Click **Fetch signing key**.
-4. The server calls Replicate's `GET /v1/webhooks/default/secret` and saves the returned key into `REPLICATE_WEBHOOK_SIGNING_SECRET` in the Lab `.env`.
-5. The UI reports presence only. It does not print the secret.
+Usage histories, account balances, multiple-key switching, Brand collection management and embedded Google Images remain explicitly deferred. Google Images currently opens an external search; a supported embedded provider must be selected for production.
 
-**Do not generate a random replacement** for this signing key. Replicate signs with its issued key, not a locally invented value. Retrieving it does not activate a webhook listener in this package.
+### Official API references
 
-### Hosted webhook setup sequence (after the protected hosted backend exists)
-
-1. Finish Lab account authorization, approved-access checks, private job storage and private asset delivery first.
-2. Create/deploy the actual Lab HTTPS callback, for example `https://lab.thirdrailify.com/api/webhooks/replicate`. This is the proposed future path, **not a working endpoint in this POC**.
-3. Store the Replicate API token and fetched signing secret in encrypted runtime settings of the actual callback/job-service project, not public frontend build variables.
-4. The generation backend adds its callback URL and `webhook_events_filter: ["completed"]` to each prediction it creates.
-5. The callback verifies the raw body against `webhook-id`, `webhook-timestamp` and `webhook-signature`, checks timestamp freshness and constant-time HMAC equality, and rejects forged messages before processing.
-6. Match the provider prediction ID to a known job/account. Make duplicate/out-of-order callbacks safe; never create another paid prediction just because a callback is repeated.
-7. Persist the event/job update and copy output files into private durable storage. Return promptly; lengthy imports belong in a durable background workflow.
-8. Run one deliberately authorized image generation and verify valid-signature success, invalid-signature rejection, repeated-callback no-op, asset ownership and expiry handling.
-
-The verified HMAC helper in `lib/core.mjs` is a starting point with unit tests, not a production callback route. Production still needs durable replay records, job ownership, queueing, monitoring and recovery. Reference: [verify webhooks](https://replicate.com/docs/topics/webhooks/verify-webhook).
-
-## 10. Google Images tab
-
-The tab currently accepts a query and opens Google Images in a new browser tab. It does not scrape Google, embed a blocked iframe, or display invented results.
-
-Google states that Custom Search JSON API is closed to new customers and that existing-customer service ends on 1 January 2027. Do not spend time creating a new project around an assumed available legacy API. An embedded image-search feed needs a separately approved available search integration later. No Google key is needed for the POC's external link. See [Google's current notice](https://developers.google.com/custom-search/v1/overview).
-
-## 11. Fonts, logo and network behavior
-
-The nested `/poc` installation reads your existing named assets from `poc/assets`,
-then the Lab repository's root `assets`, then the sibling Public and Admin
-`assets` directories. It never edits those files or recursively reads unrelated
-repository files.
-
-Put the intended logo at `X:\GIT\ThirdRailify-Lab\assets\logos\labs0.svg`
-(or the same path under `poc/assets`). The motif uses the Public site's gold
-mask and mouse-hover treatment inside the identical 42px rounded-square shell.
-If it is absent the POC shows LAB rather than inventing a different motif.
-
-The heading is `assets/fonts/headings/American Captain.ttf` or `.otf`. Both
-extensions work, including from the Lab root one level above `/poc`. Blinker and
-Geist Mono use the existing body/monospace paths. Open Connections and scroll to
-Local brand assets to see the exact files selected. Restart after adding files.
-
-No font binaries are distributed. Exact glyph appearance requires your local
-files. Captured review images in this build environment use fallback fonts and a
-LAB mark because those user-local files were not available here.
-
-Actual generation sends prompts/reference inputs to the selected provider. Chat
-sends the current conversation to its selected provider. Local app execution does
-not mean cloud AI computation happens offline.
-
-## 12. Common issues
-
-**Nothing opens:** keep the launcher console visible and read its error. Confirm Node 22+. Manually open the loopback address printed by the launcher.
-
-**Port already in use:** the Lab may already be running. Open its existing page instead of starting another process. Do not kill unrelated Node processes. To choose another port, stop this Lab and edit `PORT` in its `.env`.
-
-**No model controls:** save/test Replicate first, then load the model schema. Some models are inaccessible or have an unsupported schema. Try exact owner/model lookup; use the model's official API schema rather than guessing parameter names.
-
-**401 / 402 / 403 / 429:** inspect the displayed provider explanation for invalid credentials, billing, access or rate limits. Do not repeatedly mash Generate. A model-list test does not prove generation entitlement.
-
-**Model not found:** use the refresh button next to the image/chat model dropdown and select a model actually returned by the provider. GPT/Grok model fields are no longer manually typed. Model availability and specialized endpoint compatibility still depend on your account/provider.
-
-**Uncertain/interrupted generation:** check the provider dashboard before resubmitting. Direct image cancellation is not guaranteed after submission, and stopping the local server does not guarantee provider billing stops.
-
-**Export looks cropped:** choose Fit / no crop. Fill / crop intentionally scales to cover the selected thumbnail ratio. The original asset is retained separately.
-
-**Browser refuses the local URL:** check the browser's administrator/enterprise policies or another permitted local browser. The app does not modify security policy automatically.
-
-**Chat knows no current facts:** no web research tool is wired in this POC. Treat it as prompt-writing/general conversation, not verified browsing. Provider histories stay separate. New chat archives the current conversation; the trash button deletes the current one and History manages archived chats.
-
-**Ready for Cloudflare?** Not yet. The protected hosted backend, account integration and approvals must be implemented before `lab.thirdrailify.com` is exposed. See [FUTURE-INTEGRATION](FUTURE-INTEGRATION.md).
-
-## 13. New POC 0.2 controls
-
-Select GPT or Grok and use the new model dropdown directly in the image controls.
-The Research AI chat tab has its own independent model dropdown. Refresh re-reads
-the provider catalog. The server never lists invented available model names;
-OpenAI compatibility is inferred from returned model-ID families because the
-model-list API does not supply full endpoint capabilities. Grok's typed lists
-supply image/text classification. Connections also uses these lists for saved
-default selections. No new key or webhook is required for this change.
-
-Library now has Delete controls beside saved sessions, images and completed job
-history. The project rail provides New and Close/Discard controls. Deleting a session keeps
-its assets; an asset in use by another saved session cannot be deleted. Deleting
-local records does not delete provider-side records or downloads elsewhere.
-
-The left rail's top button collapses the controls into an icon rail. Drag the
-research divider to a much wider width or use its keyboard shortcuts. Research
-header buttons open a dedicated window or tab; the detached view retains chat
-history, provider and draft, with a Dock action to return. Popup blocking has a
-separate new-tab alternative.
-
-The header account widget is a design scaffold with no login/authentication gate.
-It does not reuse or impersonate a real Admin account. Keep the POC loopback-only.
-
-
-## 17. Shared project workflow in 0.3
-
-Use the document rail beneath the header for New, Save, conversation History,
-Delete conversation, New conversation and pin/auto-hide. Studio and Research share
-the active project. Save includes reference images and a research snapshot;
-unsaved open tabs also use browser localStorage. Closing the final tab opens the
-full Library. Create/Compose are available again after New project or opening a
-saved project. The Settings page is independent of open projects.
-
-Replicate inputs preview local uploads and safe HTTPS images. A model without a
-text-prompt input uses the central Run model action. Creative-direction settings
-open the preset lightbox. Both left/right panel boundaries are adjustable; the
-left boundary is intentionally more constrained. The header layout menu and the
-collapsible Research model controls expose the remaining layout options.
-
-The complete release contains all original supporting styles/modules plus the
-new workspace files. No additional individual-file downloads are needed.
+https://replicate.com/docs/reference/http
+https://replicate.com/docs/topics/predictions/output-files
+https://replicate.com/docs/topics/webhooks/verify-webhook
+https://developers.openai.com/api/docs/guides/tools-web-search
+https://developers.openai.com/api/docs/guides/file-inputs
+https://developers.openai.com/api/docs/guides/tools-code-interpreter
+https://developers.openai.com/api/docs/guides/image-generation
+https://docs.x.ai/developers/tools/web-search
+https://docs.x.ai/developers/tools/code-execution
+https://docs.x.ai/developers/model-capabilities/files/chat-with-files
+https://docs.x.ai/developers/model-capabilities/images/editing
+
+Provider/model availability changes. The adapter sends these documented request shapes; live paid account/model acceptance was not performed for this package. See TESTING.md for exact evidence and limits.

@@ -1,3 +1,5 @@
+import {CanvasView} from './canvas-view.js';
+import {renderMarkdown,safeUrl} from './rich-text.js';
 import {workflowFor,isImageField,safeImageUrl,missingInputs,preparePrompt} from './model-schema.js';
 const $=id=>document.getElementById(id);
 const icon=name=>`<svg class="icon"><use href="/icons.svg#${name}"/></svg>`;
@@ -18,7 +20,7 @@ function storageGet(key,fallback){try{return JSON.parse(localStorage.getItem(key
 function storageSet(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch{toast('Local browser storage is full. Saved image projects remain on disk.',true);}}
 
 async function boot(){
-  const data=await api('/api/state');state.csrf=data.csrf;state.config=data.config;state.jobs=data.jobs;state.assets=data.assets;state.projects=data.projects;state.catalog=data.catalog;
+  const data=await api('/api/state');state.csrf=data.csrf;state.config=data.config;state.jobs=data.jobs;state.assets=data.assets;state.projects=data.projects;state.catalog=data.catalog;state.attachments=data.attachments||[];
   if(data.config.fonts.length){
     const mapping={display:['American Captain','--display'],body:['Blinker','--body'],bodybold:['Blinker',null],mono:['Geist Mono','--mono']};
     const rules=data.config.fonts.map(k=>{const [family]=mapping[k];return `@font-face{font-family:"${family}";src:url('/brand-fonts/${k}');font-weight:${k==='bodybold'?600:k==='mono'?'100 900':400};font-display:swap}`;}).join('');
@@ -27,7 +29,7 @@ async function boot(){
     for(const key of data.config.fonts){const [family,varname]=mapping[key];if(varname)document.documentElement.style.setProperty(varname,`'${family}',${getComputedStyle(document.documentElement).getPropertyValue(varname)}`);}
   }
   $('serverStatus').textContent='Local server connected';state.chosen=storageGet('tr-lab-model-choices',{});state.preferences=data.preferences||{};
-  setupBrand();setupLayout();updateKeyStatus();renderHistory();renderModelCards(state.catalog);
+  setupBrand();setupLayout();setupFinalUI();updateKeyStatus();renderHistory();renderModelCards(state.catalog);
   await initWorkspace();
   schedulePoll();
 }
@@ -38,7 +40,7 @@ function updateKeyStatus(){
 }
 function setMode(mode){
   if(!state.activeSessionId&&!state.restoring){toast('Open or create a project from Library first.');showLibrary();return;}
-  state.mode=mode;state.page=mode;document.body.classList.toggle('thumbnail-mode',mode==='thumbnail');$('appShell').classList.remove('shell-mode');$('libraryPage').hidden=true;$('workspaceSettingsPage').hidden=true;
+  state.mode=mode;state.page=mode;document.body.classList.toggle('thumbnail-mode',mode==='thumbnail');$('appShell').classList.remove('shell-mode');$('libraryPage').hidden=true;$('workspaceSettingsPage').hidden=true;$('brandAssetsPage').hidden=true;$('brandPageButton').classList.remove('active');$('sectionEyebrow').textContent=mode==='thumbnail'?'02 / COMPOSE':'01 / CREATE';
   document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));$('libraryButton').classList.remove('active');$('settingsPageButton').classList.remove('active');
   $('generationControls').hidden=mode!=='generate';$('thumbnailControls').hidden=mode!=='thumbnail';$('promptCard').hidden=mode!=='generate';
   $('modeLabel').textContent=mode==='thumbnail'?'Thumbnail composer':'Image studio';$('inspectorTitle').textContent=mode==='thumbnail'?'Composition settings':'Generation settings';$('workTitle').innerHTML=mode==='thumbnail'?'THUMBNAIL COMPOSER<span>.</span>':'THE IMAGE STUDIO<span>.</span>';
@@ -144,7 +146,7 @@ function collectInputs(){
 function updateDirectControls(){
   if(state.provider==='replicate'||!state.config)return;
   const p=state.provider;$('fieldCount').textContent=p==='openai'?'2 FIELDS':'1 FIELD';
-  $('parameterForm').innerHTML=p==='openai'?`<label class="field">Output size<select id="directSize"><option value="1536x1024">1536 × 1024 · landscape</option><option value="1024x1024">1024 × 1024 · square</option><option value="1024x1536">1024 × 1536 · portrait</option></select></label><label class="field">Quality<select id="directQuality"><option value="low">Low · draft</option><option value="medium">Medium</option><option value="high">High</option><option value="auto">Model decides</option></select></label><p class="helper">One image per submission. Model-specific options/access are validated by the provider. Direct editing remains deferred.</p>`:`<label class="field">Aspect ratio<select id="directRatio"><option>16:9</option><option>1:1</option><option>3:2</option><option>2:3</option><option>9:16</option></select></label><p class="helper">One image per submission. Output is saved locally.</p>`;
+  $('parameterForm').innerHTML=p==='openai'?`<label class="field">Output size<select id="directSize"><option value="1536x1024">1536 × 1024 · landscape</option><option value="1024x1024">1024 × 1024 · square</option><option value="1024x1536">1024 × 1536 · portrait</option></select></label><label class="field">Quality<select id="directQuality"><option value="low">Low · draft</option><option value="medium">Medium</option><option value="high">High</option><option value="auto">Model decides</option></select></label><p class="helper">One image per submission. Model-specific options/access are validated by the provider. Attach reference images beside Generate to edit an existing image.</p>`:`<label class="field">Aspect ratio<select id="directRatio"><option>16:9</option><option>1:1</option><option>3:2</option><option>2:3</option><option>9:16</option></select></label><p class="helper">One image per submission. Output is saved locally.</p>`;
   loadImageModels().catch(()=>{});renderWorkflow();
 }
 on('generate','click',async()=>{
@@ -163,6 +165,7 @@ on('generate','click',async()=>{
     }else if(!prompt)throw new Error('Enter your generation prompt first.');
     const model=provider==='replicate'?state.modelId:$('imageModelSelect').value;if(!model||(provider!=='replicate'&&$('imageModelSelect').disabled))throw new Error('Choose an image model. Refresh the model list if needed.');
     const options=provider==='openai'?{size:$('directSize').value,quality:$('directQuality').value}:provider==='xai'?{aspect_ratio:$('directRatio').value}:{};
+    if(provider!=='replicate')options.references=state.directReferences||[];
     captureSession();const result=await api('/api/generate',{method:'POST',body:{provider,model,prompt:w.hasPrompt?prompt:'',input,options,sessionId:sid,requestId:crypto.randomUUID()}});
     state.jobs.unshift(result.job);const doc=readDoc(sid);if(doc){doc.currentJob=result.job.id;writeDoc(doc);}
     if(sid===state.activeSessionId){state.currentJob=result.job.id;renderJob();}renderTabs();schedulePoll();
@@ -211,7 +214,7 @@ function renderStage(){
   if(thumb){drawThumbnail();$('canvasLabel').textContent='COMPOSER / EDITABLE TEXT';}
   else $('canvasLabel').textContent='CANVAS / ORIGINAL';
   $('assetMeta').textContent=state.image?`${state.image.naturalWidth} × ${state.image.naturalHeight} · ${state.selected.source==='generation'?'Generated original':state.selected.source==='thumbnail'?'Thumbnail export':'Local image'} · ${Math.round(state.selected.bytes/1024)} KB`:'Original framing preserved · No image loaded';
-  renderJob();
+  renderJob();canvasView?.update();renderStudioAttachments();
 }
 function renderHistory(){
   const assets=state.assets.slice(0,30);$('outputCount').textContent=String(state.assets.length).padStart(2,'0');
@@ -282,9 +285,10 @@ async function showLibrary(){
 function renderLibrary(){
   const query=$('librarySearch').value.trim().toLowerCase(),matches=v=>String(v||'').toLowerCase().includes(query);
   const projects=state.projects.filter(p=>matches(p.name)),assets=state.assets.filter(a=>matches(a.title||a.source));
-  $('projectList').innerHTML=projects.length?projects.map(p=>`<div class="project-entry"><button class="project-chip" data-project="${p.id}">${esc(p.name)}<small>Project + research · ${esc(new Date(p.updatedAt).toLocaleString('en-US'))}</small></button><button class="icon-button danger-text" data-delete-project="${p.id}" aria-label="Delete session ${esc(p.name)}">${icon('trash')}</button></div>`).join(''):'<p class="helper">No saved projects here. Create a new session, or clear the search.</p>';
+  $('projectList').innerHTML=projects.length?projects.map(p=>`<div class="project-entry"><button class="project-chip" data-project="${p.id}">${esc(p.name)}<small>Project + research · ${esc(new Date(p.updatedAt).toLocaleString('en-US'))}</small></button><button class="icon-button" data-rename-project="${p.id}" aria-label="Rename session ${esc(p.name)}" title="Rename session">${icon('edit')}</button><button class="icon-button danger-text" data-delete-project="${p.id}" aria-label="Delete session ${esc(p.name)}">${icon('trash')}</button></div>`).join(''):'<p class="helper">No saved projects here. Create a new session, or clear the search.</p>';
   $('assetLibrary').innerHTML=assets.length?assets.map(a=>`<div class="asset-entry"><button class="asset-tile" data-asset="${a.id}"><img src="${a.url}" loading="lazy" alt="${esc(a.title||a.source)}"><span>${esc(a.title||a.source)}</span></button><button class="icon-button danger-text asset-delete" data-delete-asset="${a.id}" aria-label="Delete image ${esc(a.title||a.source)}">${icon('trash')}</button></div>`).join(''):'<p class="helper">No matching images yet.</p>';
   $('jobList').innerHTML=state.jobs.filter(j=>matches(j.prompt||j.model)).map(j=>`<div class="job-row"><div><strong>${esc((j.prompt||j.model+' · input-based run').slice(0,110))}</strong><p>${esc(j.provider+' / '+j.model)}</p><span class="micro">${esc(niceStatus(j.status))} · ${esc(new Date(j.createdAt).toLocaleString('en-US'))}</span>${j.error?`<div class="error-message">${esc(j.error)}</div>`:''}</div><div class="job-buttons">${j.providerUrl?`<a href="${esc(j.providerUrl)}" target="_blank" rel="noopener noreferrer" class="text-button">Provider ↗</a>`:''}${j.provider==='replicate'&&j.providerId&&j.status==='download_failed'?`<button class="button compact" data-retry="${j.id}">Retry download</button>`:''}<button class="text-button danger-text" data-delete-job="${j.id}" ${activeStatus(j.status)?'disabled':''}>Delete history</button></div></div>`).join('')||'<p class="helper">No generation jobs.</p>';
+  $('projectList').querySelectorAll('[data-rename-project]').forEach(b=>b.onclick=()=>renameSavedProject(b.dataset.renameProject).catch(e=>toast(e.message,true)));
   $('assetLibrary').querySelectorAll('[data-asset]').forEach(b=>b.onclick=async()=>{try{if(!state.activeSessionId)await newSession();setMode('generate');await selectAsset(state.assets.find(a=>a.id===b.dataset.asset));}catch(e){toast(e.message,true);}});
   $('projectList').querySelectorAll('[data-project]').forEach(b=>b.onclick=()=>openSession(b.dataset.project).catch(e=>toast(e.message,true)));
   $('jobList').querySelectorAll('[data-retry]').forEach(b=>b.onclick=async()=>{try{await api('/api/jobs/'+b.dataset.retry+'/download',{method:'POST',body:{}});await refreshJobs();await showLibrary();}catch(e){toast(e.message,true);}});
@@ -301,12 +305,16 @@ function renderLibrary(){
 on('libraryButton','click',showLibrary);on('allHistory','click',showLibrary);
 on('helpButton','click',()=>$('helpDialog').showModal());
 
+function providerState(p,key){const test=state.config.keyTests?.[p];return !state.config.keys[key]?{kind:'warning',icon:'warning',text:'Key missing'}:test?.status==='verified'?{kind:'verified',icon:'check',text:'Authentication verified'}:test?.status==='rejected'?{kind:'rejected',icon:'warning',text:'Key rejected'}:test?.status==='unavailable'?{kind:'warning',icon:'warning',text:'Test unavailable'}:{kind:'saved',icon:'check',text:'Key saved'};}
+function providerMark(p){return state.config.brand?.providers?.[p]?`<span class="provider-logo" style="--provider-logo:url('/brand-assets/${p}.svg')" aria-hidden="true"></span>`:`<span class="provider-initial" aria-hidden="true">${p==='replicate'?'R':p==='openai'?'O':'G'}</span>`;}
+function statusMarkup(p,key){const v=providerState(p,key);return `<span class="status-chip ${v.kind}">${icon(v.icon)}${esc(v.text)}</span>`;}
+function refreshConnectionStatuses(){for(const [p,k] of Object.entries({replicate:'REPLICATE_API_TOKEN',openai:'OPENAI_API_KEY',xai:'XAI_API_KEY'})){const el=document.querySelector(`[data-key-status="${p}"]`);if(el)el.innerHTML=statusMarkup(p,k);}if(state.page==='settings')renderWorkspaceSettings();}
 function showSettings(){
-  const cards=[['REPLICATE_API_TOKEN','Replicate','replicate','https://replicate.com/account/api-tokens'],['OPENAI_API_KEY','OpenAI / GPT','openai','https://platform.openai.com/api-keys'],['XAI_API_KEY','Grok / SpaceXAI','xai','https://console.x.ai/']];
-  $('keyFields').innerHTML=cards.map(([key,name,p,url])=>`<section class="key-card"><div class="key-card-head"><span>${name}</span><span class="key-state ${state.config.keys[key]?'set':''}">${state.config.keys[key]?'KEY SAVED · NOT A LIVE VERIFICATION':'NOT CONFIGURED'}</span></div><div class="key-row"><input type="password" id="key_${key}" autocomplete="new-password" spellcheck="false" placeholder="${state.config.keys[key]?'Saved — leave blank to keep':'Paste your API key'}" aria-label="${name} API key"><button type="button" class="button compact" data-test-provider="${p}">Test</button></div><p><a href="${url}" target="_blank" rel="noopener noreferrer">Open provider key console ↗</a> · Keys are never returned to this page.</p></section>`).join('');
+  const cards=[['REPLICATE_API_TOKEN','Replicate','replicate','https://replicate.com/account/api-tokens','Your model playground.'],['OPENAI_API_KEY','OpenAI / GPT','openai','https://platform.openai.com/api-keys','Create. Reason. Research.'],['XAI_API_KEY','Grok / SpaceXAI','xai','https://console.x.ai/','Explore a different perspective.']];
+  $('keyFields').innerHTML=cards.map(([key,name,p,url,line],i)=>`<section class="key-card provider-card"><div class="key-card-head"><div class="provider-identity">${providerMark(p)}<span><strong>${name}</strong><small>${line}</small></span></div><span data-key-status="${p}">${statusMarkup(p,key)}</span></div><div class="key-source"><span class="key-source-number">0${i+1}</span><span>LOCAL ENVIRONMENT</span><code>${key}</code></div><div class="key-row"><input type="password" id="key_${key}" autocomplete="new-password" spellcheck="false" placeholder="${state.config.keys[key]?'Saved — leave blank to keep':'Paste your provider API key'}" aria-label="${name} API key"><button type="button" class="button compact" data-test-provider="${p}">${icon('check')}Test</button></div><p><a href="${url}" target="_blank" rel="noopener noreferrer">Open provider key console ${icon('external')}</a><span>Key values never return to the browser.</span></p><details class="key-profile-scaffold"><summary>${icon('layers')}Saved key profiles<span class="planned-chip">COMING NEXT</span></summary><div class="key-profile-body"><div><strong>Environment fallback</strong><span class="status-chip saved">${icon('check')}Active source</span></div><p>Future Admin-managed profiles will let you save, label, select, and assign different keys per model. The current .env key remains in use.</p><button class="button compact" disabled>Add key profile · planned</button><button class="button compact" disabled>Assign model · planned</button></div></details></section>`).join('');
   const names=[['OPENAI_IMAGE_MODEL','OpenAI image model',state.config.models.openaiImage],['OPENAI_CHAT_MODEL','OpenAI chat model',state.config.models.openaiChat],['XAI_IMAGE_MODEL','Grok image model',state.config.models.xaiImage],['XAI_CHAT_MODEL','Grok chat model',state.config.models.xaiChat]];
   $('modelSettings').innerHTML=names.map(([k,label,v])=>`<label class="field">${label}<select id="cfg_${k}"><option value="${esc(v)}">${esc(v||'Load provider models')}</option></select></label>`).join('');
-  $('keyFields').querySelectorAll('[data-test-provider]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await saveConnections(false);const result=await api('/api/settings/test',{method:'POST',body:{provider:b.dataset.testProvider}});settingsNote(result.message);}catch(e){settingsNote(e.message,true);}finally{b.disabled=false;}});
+  $('keyFields').querySelectorAll('[data-test-provider]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await saveConnections(false);const result=await api('/api/settings/test',{method:'POST',body:{provider:b.dataset.testProvider}});state.config=result.config;refreshConnectionStatuses();settingsNote(result.message);}catch(e){try{const data=await api('/api/state');state.config=data.config;refreshConnectionStatuses();}catch{}settingsNote(e.message,true);}finally{b.disabled=false;}});
   $('settingsMessage').hidden=true;$('settingsDialog').showModal();refreshSettingsModels().catch(e=>settingsNote(e.message,true));showBrandStatus();
 }
 function settingsNote(message,bad=false){$('settingsMessage').textContent=message;$('settingsMessage').classList.toggle('error-message',bad);$('settingsMessage').hidden=false;}
@@ -314,8 +322,8 @@ async function saveConnections(announce=true){
   const vals={};for(const k of ['REPLICATE_API_TOKEN','OPENAI_API_KEY','XAI_API_KEY']){if($('key_'+k)?.value)vals[k]=$('key_'+k).value;}
   for(const k of ['OPENAI_IMAGE_MODEL','OPENAI_CHAT_MODEL','XAI_IMAGE_MODEL','XAI_CHAT_MODEL'])if($('cfg_'+k)?.value)vals[k]=$('cfg_'+k).value;
   const r=await api('/api/settings',{method:'POST',body:vals});state.config=r.config;
-  for(const k of ['REPLICATE_API_TOKEN','OPENAI_API_KEY','XAI_API_KEY']){$('key_'+k).value='';$('key_'+k).placeholder=state.config.keys[k]?'Saved — leave blank to keep':'Paste your API key';const chip=$('key_'+k).closest('.key-card').querySelector('.key-state');chip.textContent=state.config.keys[k]?'KEY SAVED · NOT A LIVE VERIFICATION':'NOT CONFIGURED';chip.classList.toggle('set',state.config.keys[k]);}
-  state.modelChoices={};updateKeyStatus();loadChatModels().catch(()=>{});refreshChatCaption();if(announce)settingsNote('Saved to this Lab folder’s .env file. Use Test to verify provider authentication. No restart is needed.');
+  for(const k of ['REPLICATE_API_TOKEN','OPENAI_API_KEY','XAI_API_KEY']){$('key_'+k).value='';$('key_'+k).placeholder=state.config.keys[k]?'Saved — leave blank to keep':'Paste your API key';}
+  refreshConnectionStatuses();state.modelChoices={};updateKeyStatus();loadChatModels().catch(()=>{});refreshChatCaption();if(announce)settingsNote('Saved to this Lab folder’s .env file. Use Test to verify provider authentication. No restart is needed.');
 }
 on('connections','click',showSettings);on('saveSettings','click',async()=>{try{await saveConnections();}catch(e){settingsNote(e.message,true);}});
 on('fetchWebhookKey','click',async()=>{try{await saveConnections(false);const r=await api('/api/settings/webhook-key',{method:'POST',body:{}});state.config=r.config;settingsNote(r.message);}catch(e){settingsNote(e.message,true);}});
@@ -338,46 +346,53 @@ const chats={openai:[],xai:[]};
 function chatProvider(){return $('chatProvider').value;}
 function chatKey(p,sid=state.activeSessionId){return 'tr-lab-v3-chat:'+sid+':'+p;}
 function draftKey(p,sid=state.activeSessionId){return 'tr-lab-v3-chat-draft:'+sid+':'+p;}
-function refreshChatCaption(){if(!state.config)return;const model=$('chatModelSelect').value||'Select a model';$('chatModelCaption').textContent=model+' · No web tools';$('chatModelSummary').textContent=model;}
+function refreshChatCaption(){if(!state.config)return;const model=$('chatModelSelect').value||'Select a model',p=effectiveResearchProfile();$('chatModelCaption').textContent=[p.webSearch?'Web search available':'Web search off',p.analysis?'Analysis available':null,'Images + files'].filter(Boolean).join(' · ');$('chatModelSummary').textContent=model;}
 function addMessage(role,text,provider=chatProvider()){
-  const node=document.createElement('div');node.className='chat-message '+role;const head=document.createElement('div');head.className='message-head';head.textContent=role==='user'?'YOU':provider==='openai'?'GPT / OPENAI':'GROK';const body=document.createElement('div');body.className='message-text';body.textContent=text;node.append(head,body);$('chatMessages').append(node);return node;
+  const node=document.createElement('div');node.className='chat-message '+role;const head=document.createElement('div');head.className='message-head';head.textContent=role==='user'?'YOU':provider==='openai'?'GPT / OPENAI':'GROK';const body=document.createElement('div');body.className='message-text';body.innerHTML=role==='assistant'?renderMarkdown(text):esc(text).replaceAll('\n','<br>');node.append(head,body);$('chatMessages').append(node);return node;
 }
 function attachActions(node,text,sid=state.activeSessionId){const div=document.createElement('div');div.className='message-actions';const copy=document.createElement('button');copy.className='text-button';copy.textContent='Copy';copy.onclick=()=>navigator.clipboard.writeText(text).then(()=>toast('Copied.'));const use=document.createElement('button');use.className='text-button';use.textContent='Use as prompt';use.onclick=()=>useResearchPrompt(text,sid);div.append(copy,use);node.append(div);}
 function bindSuggestions(){document.querySelectorAll('[data-chat-prompt]').forEach(b=>b.onclick=()=>{$('chatInput').value=b.dataset.chatPrompt;storageSet(draftKey(chatProvider()),$('chatInput').value);markResearchDirty();$('chatInput').focus();});}
 function refreshChat(){
-  refreshChatCaption();const sid=state.activeSessionId;
+  refreshChatCaption();renderChatAttachmentTray();const sid=state.activeSessionId;
   $('chatInput').disabled=!sid;$('chatProvider').disabled=!sid;$('sendChat').disabled=!sid;
   const history=sid?storageGet(chatKey(chatProvider()),[]):[];chats[chatProvider()]=history;
   $('chatMessages').innerHTML=sid?(history.length?'':welcomeMarkup):'<div class="chat-welcome"><h3>No open project.</h3><p>Open a project from Library to continue its research.</p></div>';
-  for(const m of history){const node=addMessage(m.role,m.content);if(m.role==='assistant')attachActions(node,m.content,sid);}bindSuggestions();
+  for(const m of history){const node=addMessage(m.role,m.content);decorateMessage(node,m);if(m.role==='assistant')attachActions(node,m.content,sid);}bindSuggestions();
   const busy=chatRun&&chatRun.sid===sid&&chatRun.provider===chatProvider();if(busy&&chatRun.full){const node=addMessage('assistant',chatRun.full);node.id='activeChatResponse';}
   $('sendChat').innerHTML=icon(busy?'close':'send');$('sendChat').setAttribute('aria-label',busy?'Stop chat response':'Send chat message');$('chatStatus').textContent=busy?'RESPONSE IN PROGRESS':'PROJECT CONVERSATION';
 }
 on('chatProvider','change',()=>{state.remoteChatBusy=false;saveResearchPrefs();$('chatInput').value=storageGet(draftKey(chatProvider()),'');refreshChat();loadChatModels().catch(()=>{});});
-on('newChat','click',()=>{if(!state.activeSessionId)return;if(chatBusyForSession())throw new Error('Stop or finish the current response first.');archiveChat();storageSet(chatKey(chatProvider()),[]);storageSet(draftKey(chatProvider()),'');$('chatInput').value='';markResearchDirty();refreshChat();toast('Previous conversation archived within this project.');});
-on('deleteChat','click',async()=>{if(!state.activeSessionId)return;if(chatBusyForSession())throw new Error('Stop or finish the current response first.');if(!await askSession({title:'Delete this conversation?',text:'Remove the current conversation from this project. Saved copies remain until you save the project again; provider-side records are unchanged.',confirm:'Delete conversation',discard:false}))return;storageSet(chatKey(chatProvider()),[]);storageSet(draftKey(chatProvider()),'');$('chatInput').value='';markResearchDirty();refreshChat();});
+on('newChat','click',()=>{if(!state.activeSessionId)return;if(chatBusyForSession())throw new Error('Stop or finish the current response first.');archiveChat();storageSet(chatKey(chatProvider()),[]);storageSet(draftKey(chatProvider()),'');storageSet(attachmentDraftKey(),[]);$('chatInput').value='';markResearchDirty();refreshChat();toast('Previous conversation archived within this project.');});
+on('deleteChat','click',async()=>{if(!state.activeSessionId)return;if(chatBusyForSession())throw new Error('Stop or finish the current response first.');if(!await askSession({title:'Delete this conversation?',text:'Remove the current conversation from this project. Saved copies remain until you save the project again; provider-side records are unchanged.',confirm:'Delete conversation',discard:false}))return;storageSet(chatKey(chatProvider()),[]);storageSet(draftKey(chatProvider()),'');storageSet(attachmentDraftKey(),[]);$('chatInput').value='';markResearchDirty();refreshChat();});
 let chatRun=null;
 function chatBusyForSession(){return Boolean(chatRun?.sid===state.activeSessionId||state.remoteChatBusy);}
 async function sendChatRequest(){
-  const sid=state.activeSessionId,p=chatProvider(),model=$('chatModelSelect').value,text=$('chatInput').value.trim();if(!sid||!text)return;
+  const sid=state.activeSessionId,p=chatProvider(),model=$('chatModelSelect').value,text=$('chatInput').value.trim(),attachments=storageGet(attachmentDraftKey(p,sid),[]);
+  if(!sid||(!text&&!attachments.length))return;
   if(chatRun){if(chatRun.sid===sid&&chatRun.provider===p){chatRun.controller.abort();return;}throw new Error('A response is running in another project. Wait for it to finish.');}
   if(!model)throw new Error('Choose a chat model first.');if(!state.config.keys[p==='openai'?'OPENAI_API_KEY':'XAI_API_KEY'])return showSettings();
-  const history=storageGet(chatKey(p,sid),[]);if(history.length>=38)throw new Error('Start a new conversation to stay within the POC message limit.');history.push({role:'user',content:text});storageSet(chatKey(p,sid),history);storageSet(draftKey(p,sid),'');$('chatInput').value='';
-  const run={sid,provider:p,full:'',controller:new AbortController()};chatRun=run;state.chatBusy=true;markResearchDirty(sid);refreshChat();publishDesk({type:'chat-busy',sid,provider:p,busy:true});
-  let waiting=null;if(sid===state.activeSessionId){waiting=document.createElement('div');waiting.className='thinking-indicator';waiting.innerHTML='<i></i><i></i><i></i><span>Waiting for response…</span>';$('chatMessages').append(waiting);}
+  if(state.chatUploading)throw new Error('Wait for attachments to finish saving.');
+  const history=storageGet(chatKey(p,sid),[]);if(history.length>=118)throw new Error('Start a new conversation to stay within the local message limit.');
+  history.push({role:'user',content:text,attachments});storageSet(chatKey(p,sid),history);storageSet(draftKey(p,sid),'');storageSet(attachmentDraftKey(p,sid),[]);$('chatInput').value='';
+  const run={sid,provider:p,full:'',meta:{},controller:new AbortController()};chatRun=run;state.chatBusy=true;markResearchDirty(sid);refreshChat();publishDesk({type:'chat-busy',sid,provider:p,busy:true});
+  let waiting=null;if(sid===state.activeSessionId){waiting=document.createElement('div');waiting.className='thinking-indicator';waiting.innerHTML='<i></i><i></i><i></i><span>Preparing response…</span>';$('chatMessages').append(waiting);}
   try{
-    const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-CSRF':state.csrf},body:JSON.stringify({provider:p,model,messages:history}),signal:run.controller.signal});if(!response.ok){const d=await response.json();throw new Error(d.error||'Chat failed.');}
+    const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-CSRF':state.csrf},body:JSON.stringify({provider:p,model,messages:history.map(m=>({role:m.role,content:m.content,attachments:m.attachments||[]}))}),signal:run.controller.signal});
+    if(!response.ok){const d=await response.json();throw new Error(d.error||'Chat failed.');}
     const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
     for(;;){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});let end;
       while((end=buffer.indexOf('\n\n'))>=0){const block=buffer.slice(0,end);buffer=buffer.slice(end+2);const type=block.match(/^event: (.*)$/m)?.[1],raw=block.match(/^data: (.*)$/m)?.[1];if(!raw)continue;const d=JSON.parse(raw);
-        if(type==='status'&&waiting?.isConnected)waiting.querySelector('span').textContent=d.message;
-        if(type==='delta'){waiting?.remove();run.full+=d.text;publishDesk({type:'chat-preview',sid,provider:p,text:run.full});if(sid===state.activeSessionId&&p===chatProvider()){let node=$('activeChatResponse');if(!node){node=addMessage('assistant','',p);node.id='activeChatResponse';}node.querySelector('.message-text').textContent=run.full;$('chatMessages').scrollTop=$('chatMessages').scrollHeight;}}
+        if(type==='status'){if(waiting?.isConnected)waiting.querySelector('span').textContent=d.message;if(sid===state.activeSessionId)$('chatStatus').textContent=d.message;}
+        if(type==='delta'){waiting?.remove();run.full+=d.text;publishDesk({type:'chat-preview',sid,provider:p,text:run.full});if(sid===state.activeSessionId&&p===chatProvider()){let node=$('activeChatResponse');if(!node){node=addMessage('assistant','',p);node.id='activeChatResponse';}node.querySelector('.message-text').innerHTML=renderMarkdown(run.full);$('chatMessages').scrollTop=$('chatMessages').scrollHeight;}}
+        if(type==='done'){run.meta=d;if(d.artifacts?.length)state.attachments.push(...d.artifacts);if(d.warning||d.cleanup)toast(d.warning||d.cleanup,true);}
         if(type==='error')throw new Error(d.message);
       }
     }
-    if(run.full){history.push({role:'assistant',content:run.full});if(readDoc(sid)){storageSet(chatKey(p,sid),history);markResearchDirty(sid);}}
-  }catch(e){toast(e.name==='AbortError'?'Response stopped. Provider work already performed may still be billed.':e.message,true);}
-  finally{waiting?.remove();chatRun=null;state.chatBusy=false;publishDesk({type:'chat-busy',sid,provider:p,busy:false});if(sid===state.activeSessionId)refreshChat();renderTabs();}
+  }catch(e){run.meta.warning=e.name==='AbortError'?'Response stopped. Partial text retained.':e.message;toast(run.meta.warning,true);}
+  finally{
+    if(run.full&&readDoc(sid)){history.push({role:'assistant',content:run.full,...run.meta,model});storageSet(chatKey(p,sid),history);markResearchDirty(sid);}
+    waiting?.remove();chatRun=null;state.chatBusy=false;publishDesk({type:'chat-busy',sid,provider:p,busy:false});if(sid===state.activeSessionId)refreshChat();renderTabs();
+  }
 }
 on('sendChat','click',async()=>{if(chatRun?.sid===state.activeSessionId&&chatRun.provider===chatProvider()){chatRun.controller.abort();return;}if(state.remoteChatBusy)throw new Error('A response is running in the other research window.');if(navigator.locks)await navigator.locks.request('tr-lab-chat:'+state.activeSessionId+':'+chatProvider(),{ifAvailable:true},async lock=>{if(!lock)throw new Error('This project conversation is in use in another window.');await sendChatRequest();});else await sendChatRequest();});
 on('chatInput','input',()=>{storageSet(draftKey(chatProvider()),$('chatInput').value);markResearchDirty();});
@@ -464,8 +479,8 @@ function workspaceIndex(){return storageGet(WORKSPACE_KEY,{ids:[],activeId:null}
 function readDoc(id){return id?storageGet(DOC_PREFIX+id,null):null;}
 function writeDoc(doc){storageSet(DOC_PREFIX+doc.id,doc);}
 function openDocs(){return workspaceIndex().ids.map(readDoc).filter(Boolean);}
-function docResearch(id){return {provider:storageGet('tr-lab-v3-research:'+id,{provider:'openai'}).provider||'openai',models:storageGet('tr-lab-v3-research:'+id,{}).models||{},drafts:{openai:storageGet(draftKey('openai',id),''),xai:storageGet(draftKey('xai',id),'')},chats:{openai:storageGet(chatKey('openai',id),[]),xai:storageGet(chatKey('xai',id),[])},history:storageGet('tr-lab-v3-history:'+id,[])};}
-function restoreResearch(id,r={}){storageSet('tr-lab-v3-research:'+id,{provider:r.provider||'openai',models:r.models||{}});for(const p of ['openai','xai']){storageSet(chatKey(p,id),r.chats?.[p]||[]);storageSet(draftKey(p,id),r.drafts?.[p]||'');}storageSet('tr-lab-v3-history:'+id,r.history||[]);}
+function docResearch(id){return {provider:storageGet('tr-lab-v3-research:'+id,{provider:'openai'}).provider||'openai',models:storageGet('tr-lab-v3-research:'+id,{}).models||{},drafts:{openai:storageGet(draftKey('openai',id),''),xai:storageGet(draftKey('xai',id),'')},chats:{openai:storageGet(chatKey('openai',id),[]),xai:storageGet(chatKey('xai',id),[])},history:storageGet('tr-lab-v3-history:'+id,[]),attachmentDrafts:{openai:storageGet(attachmentDraftKey('openai',id),[]),xai:storageGet(attachmentDraftKey('xai',id),[])}};}
+function restoreResearch(id,r={}){storageSet('tr-lab-v3-research:'+id,{provider:r.provider||'openai',models:r.models||{}});for(const p of ['openai','xai']){storageSet(chatKey(p,id),r.chats?.[p]||[]);storageSet(draftKey(p,id),r.drafts?.[p]||'');storageSet(attachmentDraftKey(p,id),r.attachmentDrafts?.[p]||[]);}storageSet('tr-lab-v3-history:'+id,r.history||[]);}
 function markResearchDirty(id=state.activeSessionId){const d=readDoc(id);if(!d)return;d.dirty=true;d.updatedAt=new Date().toISOString();writeDoc(d);renderTabs();}
 function saveResearchPrefs(){if(!state.activeSessionId)return;const r=storageGet('tr-lab-v3-research:'+state.activeSessionId,{});r.provider=chatProvider();r.models={...r.models,[chatProvider()]:$('chatModelSelect').value};storageSet('tr-lab-v3-research:'+state.activeSessionId,r);markResearchDirty();}
 function defaultDoc(){return {id:crypto.randomUUID(),name:'Untitled project',saved:false,dirty:false,version:3,mode:'generate',assetId:null,settings:{...initialThumb},generation:{provider:'replicate',modelId:'black-forest-labs/flux-schnell',prompt:'',style:'',presetId:'original',input:{},paramValues:{},fileInputs:{},advanced:'',options:{}},currentJob:null};}
@@ -474,7 +489,7 @@ function captureSession(dirty=true){
   const old=readDoc(state.activeSessionId);if(!old)return;
   rememberInputs();let input={};try{input=state.provider==='replicate'&&state.model?collectInputs():{};}catch{input=old.generation?.input||{};}
   const model=state.model?Object.fromEntries(Object.entries(state.model).filter(([k])=>k!=='rawSchema')):null;
-  const next={...old,version:3,mode:state.mode,assetId:state.selected?.id||null,settings:thumbSettings(),currentJob:state.currentJob,dirty:old.dirty||dirty,generation:{provider:state.provider,modelId:state.modelId,model,selectedModel:$('imageModelSelect').value,prompt:$('prompt').value,style:state.style,presetId:state.presetId||'original',input,paramValues:{...state.paramValues},fileInputs:{...state.fileInputs},advanced:$('advancedJson').value,options:{size:$('directSize')?.value,quality:$('directQuality')?.value,aspect_ratio:$('directRatio')?.value}}};
+  const next={...old,version:3,mode:state.mode,assetId:state.selected?.id||null,settings:thumbSettings(),currentJob:state.currentJob,dirty:old.dirty||dirty,generation:{provider:state.provider,modelId:state.modelId,model,selectedModel:$('imageModelSelect').value,prompt:$('prompt').value,style:state.style,presetId:state.presetId||'original',input,paramValues:{...state.paramValues},fileInputs:{...state.fileInputs},advanced:$('advancedJson').value,options:{references:state.directReferences||[],size:$('directSize')?.value,quality:$('directQuality')?.value,aspect_ratio:$('directRatio')?.value}}};
   if(next.name==='Untitled project'&&next.generation.prompt.trim())next.name=next.generation.prompt.trim().split('\n')[0].slice(0,55);
   writeDoc(next);updateSessionLabel();
 }
@@ -501,7 +516,7 @@ async function switchSession(id,capture=true){
   if(capture)captureSession(false);const token=++sessionSwitchToken;const d=readDoc(id);if(!d)return showLibrary();state.restoring=true;state.loadTicket++;state.activeSessionId=id;state.projectId=d.saved?id:null;state.remoteChatBusy=false;
   if(!state.researchOnly){const idx=workspaceIndex();idx.activeId=id;storageSet(WORKSPACE_KEY,idx);}
   try{
-    const g=d.generation||{};state.provider=g.provider||'replicate';state.modelId=g.modelId||'black-forest-labs/flux-schnell';state.model=g.model||null;state.style=g.style||'';state.presetId=g.presetId||'original';state.paramValues={...g.paramValues};state.fileInputs={...g.fileInputs};state.currentJob=d.currentJob||null;state.selected=null;state.image=null;
+    const g=d.generation||{};state.directReferences=g.options?.references||[];state.provider=g.provider||'replicate';state.modelId=g.modelId||'black-forest-labs/flux-schnell';state.model=g.model||null;state.style=g.style||'';state.presetId=g.presetId||'original';state.paramValues={...g.paramValues};state.fileInputs={...g.fileInputs};state.currentJob=d.currentJob||null;state.selected=null;state.image=null;
     $('prompt').value=g.prompt||'';$('advancedJson').value=g.advanced??(g.input?JSON.stringify(g.input,null,2):'');
     document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('active',b.dataset.provider===state.provider));$('replicateModelSection').hidden=state.provider!=='replicate';$('directModelSection').hidden=state.provider==='replicate';$('advancedSection').hidden=state.provider!=='replicate';
     if(state.provider==='replicate'){renderParameters();$('modelName').textContent=state.model?.name||state.modelId.split('/').pop();$('modelOwner').textContent=state.modelId.split('/')[0];$('schemaStatus').textContent=state.model?'Saved model schema · refresh to update':'Load model controls to continue';}
@@ -555,10 +570,16 @@ async function openSession(id){
   const old=p.project||{},doc={...defaultDoc(),...old,id,name:p.name,saved:true,dirty:false,currentJob:null};
   if(!old.generation)doc.mode='thumbnail';writeDoc(doc);restoreResearch(id,old.research||{});const idx=workspaceIndex();if(!idx.ids.includes(id))idx.ids.push(id);storageSet(WORKSPACE_KEY,idx);await switchSession(id);
 }
-function showShellPage(page){state.page=page;$('appShell').classList.add('shell-mode');$('libraryPage').hidden=page!=='library';$('workspaceSettingsPage').hidden=page!=='settings';$('modeLabel').textContent=page==='library'?'Workspace library':'Settings';document.querySelectorAll('[data-mode]').forEach(b=>b.classList.remove('active'));$('libraryButton').classList.toggle('active',page==='library');$('settingsPageButton').classList.toggle('active',page==='settings');renderTabs();}
+function showShellPage(page){state.page=page;$('brandAssetsPage').hidden=page!=='brand';$('brandPageButton').classList.toggle('active',page==='brand');$('appShell').classList.add('shell-mode');$('libraryPage').hidden=page!=='library';$('workspaceSettingsPage').hidden=page!=='settings';$('modeLabel').textContent=page==='library'?'Workspace library':page==='brand'?'Brand & assets':'Settings';document.querySelectorAll('[data-mode]').forEach(b=>b.classList.remove('active'));$('libraryButton').classList.toggle('active',page==='library');$('settingsPageButton').classList.toggle('active',page==='settings');renderTabs();}
 on('libraryNew','click',newSession);on('libraryRefresh','click',showLibrary);on('librarySearch','input',renderLibrary);
 on('settingsPageButton','click',()=>{captureSession(false);showShellPage('settings');renderWorkspaceSettings();});
-function renderWorkspaceSettings(){$('settingsRailMode').value=storageGet('tr-lab-rail-mode','pinned');$('settingsModelCollapsed').checked=!$('chatModelPanel').open;$('settingsProviderStatus').innerHTML=[['replicate','REPLICATE_API_TOKEN'],['GPT / OpenAI','OPENAI_API_KEY'],['Grok','XAI_API_KEY']].map(([n,k])=>`<span>${esc(n)} · ${state.config.keys[k]?'Key saved':'Not connected'}</span>`).join('');}
+function renderWorkspaceSettings(){
+  $('settingsRailMode').value=storageGet('tr-lab-rail-mode','pinned');$('settingsModelCollapsed').checked=!$('chatModelPanel').open;
+  const cards=[['Replicate','replicate','REPLICATE_API_TOKEN'],['OpenAI / GPT','openai','OPENAI_API_KEY'],['Grok / SpaceXAI','xai','XAI_API_KEY']];
+  $('settingsProviderStatus').innerHTML=cards.map(([n,p,k])=>`<div class="settings-provider">${providerMark(p)}<strong>${n}</strong>${statusMarkup(p,k)}</div>`).join('');
+  const configured=cards.filter(([,p,k])=>state.config.keys[k]).length,profiles=Object.keys(state.preferences?.researchProfiles||{}).length;
+  $('settingsOverview').innerHTML=`<div>${icon('link')}<span>PROVIDER CONNECTIONS<strong>${configured} / 3 keys saved</strong></span></div><div>${icon('sliders')}<span>RESEARCH PROFILES<strong>${profiles} model settings</strong></span></div><div>${icon('shield')}<span>STORAGE AUTHORITY<strong>This machine only</strong></span></div>`;
+}
 on('settingsConnections','click',showSettings);on('settingsPresets','click',openPresetEditor);on('editPresets','click',openPresetEditor);on('settingsResetPanels','click',resetPanelWidths);
 on('settingsRailMode','change',()=>setRailMode($('settingsRailMode').value));on('settingsModelCollapsed','change',()=>{$('chatModelPanel').open=!$('settingsModelCollapsed').checked;});
 let presetDraft=null;
@@ -623,7 +644,7 @@ if(deskChannel)deskChannel.onmessage=({data})=>{
   if(data.type==='closed'&&data.sid===state.activeSessionId){state.activeSessionId=null;if(state.researchOnly){refreshChat();renderTabs();}else showLibrary();}
   if(data.sid!==state.activeSessionId||data.provider!==chatProvider())return;
   if(data.type==='chat-busy'){state.remoteChatBusy=data.busy;$('chatStatus').textContent=data.busy?'RESPONSE IN OTHER VIEW':'PROJECT CONVERSATION';if(!data.busy)refreshChat();}
-  if(data.type==='chat-preview'&&!chatRun){let node=$('remoteChatPreview');if(!node){node=addMessage('assistant','');node.id='remoteChatPreview';}node.querySelector('.message-text').textContent=data.text;}
+  if(data.type==='chat-preview'&&!chatRun){let node=$('remoteChatPreview');if(!node){node=addMessage('assistant','');node.id='remoteChatPreview';}node.querySelector('.message-text').innerHTML=renderMarkdown(data.text);}
 };
 window.addEventListener('beforeunload',e=>{captureSession(false);if(state.chatBusy){e.preventDefault();e.returnValue='';}});
 window.addEventListener('storage',e=>{
@@ -648,4 +669,79 @@ on('thumbCanvas','pointerup',()=>captureSession());
 on('parameterForm','change',()=>{captureSession();renderWorkflow();});
 on('modelInfoPanel','pointerenter',()=>clearTimeout(infoTimer));on('modelInfoPanel','pointerleave',()=>{infoTimer=setTimeout(()=>showModelInfo(false),180);});
 on('contextRun','click',()=>$('generate').click());on('mobileChatHistory','click',showChatHistory);on('mobileNewChat','click',()=>$('newChat').click());on('mobileDeleteChat','click',()=>$('deleteChat').click());on('imageModelSelect','change',()=>captureSession());
+
+let canvasView=null,editingResearch=null;
+const defaultResearch={system:'',webSearch:true,analysis:true,xSearch:true,searchImages:true,effort:'default',imageDetail:'auto',maxOutputTokens:null};
+function attachmentDraftKey(p=chatProvider(),sid=state.activeSessionId){return 'tr-lab-v4-attachment-draft:'+sid+':'+p;}
+function effectiveResearchProfile(){const k=chatProvider()+'/'+$('chatModelSelect').value;return {...defaultResearch,...state.preferences?.researchProfiles?.[k]};}
+async function openResearchConfig(){
+ const p=chatProvider(),model=$('chatModelSelect').value;if(!model)return toast('Select a research model first.',true);
+ const data=await api('/api/research/profile?provider='+p+'&model='+encodeURIComponent(model));editingResearch={provider:p,model};
+ $('profileIdentity').innerHTML=providerMark(p)+`<span><strong>${esc(model)}</strong><small>${p==='openai'?'OpenAI / GPT':'Grok / SpaceXAI'} · independent model profile</small></span>`;
+ fillResearchProfile(data.profile);$('xSearchRow').hidden=p!=='xai';$('searchImagesRow').hidden=p!=='xai';$('researchProfileDialog').showModal();
+}
+function fillResearchProfile(p){$('researchSystem').value=p.system;$('researchWeb').checked=p.webSearch;$('researchAnalysis').checked=p.analysis;$('researchX').checked=p.xSearch;$('researchSearchImages').checked=p.searchImages;$('researchEffort').value=p.effort;$('researchBudget').value=p.maxOutputTokens??'';$('researchDetail').value=p.imageDetail;}
+function renderChatAttachmentTray(){
+ const ids=state.activeSessionId?storageGet(attachmentDraftKey(),[]):[];
+ $('chatAttachments').innerHTML=ids.map(id=>{const a=state.attachments?.find(x=>x.id===id);return `<span class="attachment-chip">${a?.kind==='image'?`<img src="${esc(a.url)}" alt="">`:icon('document')}<span>${esc(a?.name||'Attachment')}</span><button type="button" class="icon-button small" data-remove-chat-file="${id}" aria-label="Remove ${esc(a?.name||'attachment')}">${icon('close')}</button></span>`;}).join('');
+ $('chatAttachments').querySelectorAll('[data-remove-chat-file]').forEach(b=>b.onclick=()=>{storageSet(attachmentDraftKey(),ids.filter(x=>x!==b.dataset.removeChatFile));markResearchDirty();renderChatAttachmentTray();});
+}
+function decorateMessage(node,m){
+ if(m.attachments?.length){const box=document.createElement('div');box.className='message-attachments';box.innerHTML=m.attachments.map(id=>{const a=state.attachments?.find(x=>x.id===id);return `<a href="/attachments/${esc(id)}?download=1" class="attachment-chip">${a?.kind==='image'?`<img src="${esc(a.url)}" alt="${esc(a.name)}">`:icon('document')}<span>${esc(a?.name||'Attached file')}</span></a>`;}).join('');node.append(box);}
+ if(m.sources?.length){const d=document.createElement('details');d.className='research-sources';d.innerHTML='<summary>'+icon('globe')+'Sources · '+m.sources.length+'</summary>'+m.sources.filter(x=>safeUrl(x.url)).map(x=>`<a href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener noreferrer">${esc(x.title||x.url)} ${icon('external')}</a>`).join('');node.append(d);}
+ if(m.artifacts?.length){const d=document.createElement('div');d.className='message-attachments';d.innerHTML=m.artifacts.filter(a=>/^[a-f0-9-]{36}$/.test(a.id)).map(a=>`<a class="attachment-chip" href="/attachments/${a.id}?download=1">${icon('download')}${esc(a.name)}</a>`).join('');node.append(d);}
+ if(m.usage){const d=document.createElement('div');d.className='response-usage';const total=m.usage.total_tokens??((m.usage.input_tokens||0)+(m.usage.output_tokens||0));d.textContent=(Number.isFinite(total)?new Intl.NumberFormat('en-US').format(total)+' tokens · ':'')+'Provider-reported usage';node.append(d);}
+ if(m.warning){const d=document.createElement('p');d.className='helper response-warning';d.textContent=m.warning;node.append(d);}
+}
+function renderStudioAttachments(){
+ if(!$('studioAttachments'))return;const urls=state.provider==='replicate'?[]:state.directReferences||[];
+ $('studioAttachments').innerHTML=urls.map(url=>`<span class="attachment-chip"><img src="${esc(url)}" alt="Image edit reference"><span>Image reference</span><button class="icon-button small" type="button" data-remove-studio-file="${esc(url)}" aria-label="Remove reference image">${icon('close')}</button></span>`).join('');
+ $('studioAttachments').querySelectorAll('[data-remove-studio-file]').forEach(b=>b.onclick=()=>{state.directReferences=(state.directReferences||[]).filter(u=>u!==b.dataset.removeStudioFile);captureSession();renderStudioAttachments();});
+ $('attachStudio').title=state.provider==='replicate'?'Attach image to a model input':'Attach reference images for editing';
+}
+async function renameSavedProject(id){
+ const p=state.projects.find(x=>x.id===id);if(!p)return;
+ const answer=await askSession({title:'Rename saved session',text:'Only the name changes. Images, conversation history and settings are preserved.',name:p.name,confirm:'Rename'});if(!answer)return;
+ const r=await api('/api/projects/'+id+'/rename',{method:'POST',body:{name:answer.name}});state.projects=state.projects.map(x=>x.id===id?r.project:x);
+ const d=readDoc(id);if(d){d.name=answer.name;writeDoc(d);}updateSessionLabel();renderLibrary();toast('Saved session renamed.');
+}
+function setupFinalUI(){
+ canvasView=new CanvasView($('stage'),$('resultImage'),$('stageShell'),$('viewToolbar'));state.directReferences=[];
+ const tip=$('railTooltip');function showTip(b){tip.textContent=b.dataset.tooltip||b.getAttribute('aria-label');tip.hidden=false;const r=b.getBoundingClientRect();tip.style.left=(r.right+9)+'px';tip.style.top=Math.max(5,Math.min(innerHeight-40,r.top+(r.height-32)/2))+'px';b.setAttribute('aria-describedby','railTooltip');}
+ document.querySelectorAll('.toolrail .rail-button').forEach(b=>{b.addEventListener('pointerenter',()=>showTip(b));b.addEventListener('focus',()=>showTip(b));for(const ev of ['pointerleave','blur','click'])b.addEventListener(ev,()=>{tip.hidden=true;b.removeAttribute('aria-describedby');});});
+ on('brandPageButton','click',()=>{captureSession(false);showShellPage('brand');});on('brandOpenLibrary','click',showLibrary);
+ on('configureResearch','click',openResearchConfig);on('chatContextShortcut','click',openResearchConfig);
+ on('resetResearchProfile','click',async()=>{const r=await api('/api/research/profile?provider='+editingResearch.provider+'&model='+encodeURIComponent(editingResearch.model)+'&defaults=1');fillResearchProfile(r.profile);});
+ on('saveResearchProfile','click',async()=>{if(!editingResearch)return;const profile={system:$('researchSystem').value,webSearch:$('researchWeb').checked,analysis:$('researchAnalysis').checked,xSearch:$('researchX').checked,searchImages:$('researchSearchImages').checked,effort:$('researchEffort').value,maxOutputTokens:$('researchBudget').value,imageDetail:$('researchDetail').value};const r=await api('/api/research/profile',{method:'POST',body:{...editingResearch,profile}});state.preferences=r.preferences;refreshChatCaption();$('researchProfileDialog').close();toast('Context and tools saved for this model.');});
+ on('attachChat','click',()=>{if(!state.activeSessionId)return toast('Open a project first.',true);$('chatFileInput').click();});
+ on('chatFileInput','change',async()=>{
+   const sid=state.activeSessionId,p=chatProvider(),files=[...$('chatFileInput').files];$('chatFileInput').value='';if(!sid||!files.length)return;
+   const ids=storageGet(attachmentDraftKey(p,sid),[]);if(ids.length+files.length>8)throw new Error('Attach up to eight files per message.');state.chatUploading=true;
+   try{for(const f of files){if(f.size>16*1024*1024)throw new Error('Each attachment must be 16 MB or smaller.');const r=await api('/api/attachments',{method:'POST',body:{name:f.name,dataUrl:await readFile(f)}});state.attachments.push(r.attachment);ids.push(r.attachment.id);storageSet(attachmentDraftKey(p,sid),ids);markResearchDirty(sid);}}finally{state.chatUploading=false;renderChatAttachmentTray();}
+ });
+ on('attachStudio','click',async()=>{
+   if(!state.activeSessionId)return toast('Open a project first.',true);
+   if(state.provider==='replicate'){
+     if(!state.model)await loadModel(state.modelId);
+     const fields=Object.entries(state.model.schema.properties||{}).filter(([k,v])=>isImageField(k,v));
+     if(!fields.length)return toast('This model has no image input. Select an editing model to attach a reference.',true);
+     if(fields.length===1){$('parameterForm').querySelector(`[data-reference="${CSS.escape(fields[0][0])}"]`)?.click();return;}
+     if(!$('inputTargetDialog')){const d=document.createElement('dialog');d.id='inputTargetDialog';d.innerHTML=`<form class="dialog-head" method="dialog"><h2>Choose image input</h2><button class="icon-button" aria-label="Close input picker">${icon('close')}</button></form><div class="dialog-body" id="inputTargetList"></div>`;document.body.append(d);}
+     $('inputTargetList').innerHTML=fields.map(([k,v])=>`<button type="button" class="input-target button full" data-target-field="${esc(k)}">${icon('image')}${esc(v.title||k)}<small>${esc(v.description||'').slice(0,180)}</small></button>`).join('');
+     $('inputTargetList').querySelectorAll('[data-target-field]').forEach(b=>b.onclick=()=>{$('inputTargetDialog').close();$('parameterForm').querySelector(`[data-reference="${CSS.escape(b.dataset.targetField)}"]`)?.click();});$('inputTargetDialog').showModal();return;
+   }
+   $('studioFileInput').click();
+ });
+ on('studioFileInput','change',async()=>{
+   const sid=state.activeSessionId,provider=state.provider,files=[...$('studioFileInput').files];$('studioFileInput').value='';if(!sid||!files.length)return;
+   const refs=[...(state.directReferences||[])];if(files.length+refs.length>8)throw new Error('Attach up to eight image references.');state.inputBusy++;renderWorkflow();
+   try{for(const f of files){if(f.size>16*1024*1024)throw new Error('Reference images must be 16 MB or smaller.');const r=await api('/api/import',{method:'POST',body:{dataUrl:await readFile(f),title:'Reference · '+f.name}});state.assets.unshift(r.asset);refs.push(r.asset.url);}
+     const d=readDoc(sid);if(d){d.generation.options??={};d.generation.options.references=refs;d.dirty=true;writeDoc(d);}if(sid===state.activeSessionId&&provider===state.provider){state.directReferences=refs;captureSession();renderStudioAttachments();}
+   }finally{state.inputBusy--;renderWorkflow();}
+ });
+ $('chatProvider').addEventListener('change',renderChatAttachmentTray);$('chatModelSelect').addEventListener('change',refreshChatCaption);
+ document.querySelectorAll('[data-provider]').forEach(b=>b.addEventListener('click',renderStudioAttachments));
+ window.addEventListener('storage',e=>{if(e.key===attachmentDraftKey())renderChatAttachmentTray();});
+}
+
 boot().catch(e=>{$('serverStatus').textContent='Local server unavailable';error('Start START-LAB.cmd and open the local address. '+e.message);});

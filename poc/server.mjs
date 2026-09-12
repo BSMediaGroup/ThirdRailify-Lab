@@ -1,3 +1,4 @@
+import {normalizeProfile,profileKey,validateAttachment} from './lib/research.mjs';
 import http from 'node:http';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -20,6 +21,8 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
   const data=path.join(root,'.data');await mkdir(path.join(data,'assets'),{recursive:true});
   let state={jobs:[],assets:{},projects:[]};
   try{state=JSON.parse(await readFile(path.join(data,'state.json'),'utf8'));}catch(e){if(e.code!=='ENOENT')throw new Error('Local history could not be read. Preserve .data/state.json and repair it before starting.');}
+  state.attachments??={};state.preferences??={};
+  const keyTests={};
   const csrf=randomBytes(24).toString('hex'),providers=new Providers(()=>config,fetchImpl);
   const brand=discoverBrand?await discoverBrandAssets(root):{fonts:{},logo:null,sources:{},logoSource:null};
   const fonts=brand.fonts,modelCatalog=new ModelCatalog(providers);
@@ -30,7 +33,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
   const save=()=>{const snapshot=JSON.stringify(state,null,2);const operation=writeChain.then(()=>atomicWrite(path.join(data,'state.json'),snapshot));writeChain=operation.catch(()=>{});return operation;};
   function publicJob(j){return {id:j.id,sessionId:j.sessionId||null,requestId:j.requestId,provider:j.provider,model:j.model,version:j.version,prompt:j.prompt,createdAt:j.createdAt,status:j.status,phase:j.phase,error:j.error,providerId:j.providerId,providerUrl:j.provider==='replicate'&&j.providerId?`https://replicate.com/p/${encodeURIComponent(j.providerId)}`:null,assets:(j.assets||[]).filter(a=>state.assets[a.id]),input:safeInput(j.input),options:j.options,metrics:j.metrics,warning:j.warning};}
   function safeInput(input){return Object.fromEntries(Object.entries(input||{}).map(([k,v])=>[k,typeof v==='string'&&v.startsWith('data:')?'[reference image omitted from history preview]':v]));}
-  function publicConfig(){return {keys:Object.fromEntries(SECRET_KEYS.map(k=>[k,Boolean(config[k])])),models:{openaiImage:config.OPENAI_IMAGE_MODEL,openaiChat:config.OPENAI_CHAT_MODEL,xaiImage:config.XAI_IMAGE_MODEL,xaiChat:config.XAI_CHAT_MODEL},fonts:Object.keys(fonts),brand:{fonts:brand.sources,logo:Boolean(brand.logo),logoSource:brand.logoSource},version:'0.3.0-poc',port:server.address()?.port,localOnly:true,webhooks:false};}
+  function publicConfig(){return {keys:Object.fromEntries(SECRET_KEYS.map(k=>[k,Boolean(config[k])])),models:{openaiImage:config.OPENAI_IMAGE_MODEL,openaiChat:config.OPENAI_CHAT_MODEL,xaiImage:config.XAI_IMAGE_MODEL,xaiChat:config.XAI_CHAT_MODEL},fonts:Object.keys(fonts),brand:{fonts:brand.sources,logo:Boolean(brand.logo),logoSource:brand.logoSource,providers:brand.providerSources||{}},keyTests,version:'0.4.0-poc',port:server.address()?.port,localOnly:true,webhooks:false};}
   async function addAsset(bytes,meta={}){
     if(bytes.length>32*1024*1024)throw new LabError('Image exceeds the 32 MB limit.',413);
     const type=imageType(bytes),id=randomUUID()+'.'+type.ext;
@@ -61,7 +64,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
   function projectAssetIds(project){
     const ids=new Set(project?.assetId?[project.assetId]:[]);
     const visit=(v,depth=0)=>{if(depth>10)return;if(typeof v==='string'&&/^\/assets\/[a-f0-9-]+\.(png|jpg|webp)$/.test(v))ids.add(v.slice(8));else if(Array.isArray(v))v.forEach(x=>visit(x,depth+1));else if(v&&typeof v==='object')Object.values(v).forEach(x=>visit(x,depth+1));};
-    visit(project?.generation?.input);return [...ids];
+    visit(project?.generation?.input);visit(project?.generation?.options);return [...ids];
   }
   async function run(job){
     try{
@@ -91,7 +94,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         else {await importOutputs(job,prediction);job.status='succeeded';job.phase='Originals saved locally';}
       } else {
         job.status='processing';job.phase='Provider is generating; this may take several minutes';await save();
-        const result=await providers.directImage(job);
+        const result=await providers.directImage({...job,options:{...job.options,references:await materializeReferences(job.options?.references||[])}});
         job.assets=[];job.metrics=result.usage||{};
         for(const item of result.data||[]){
           if(!item.b64_json)throw new LabError('Provider returned a non-base64 image. This adapter requires base64 output; check model compatibility.',422,'unsupported_output');
@@ -142,7 +145,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         if(!hosts.has(String(req.headers.origin||'').replace(/^http:\/\//,''))||req.headers['x-lab-csrf']!==csrf)throw new LabError('Refresh the local Lab page before submitting.',403,'origin_rejected');
       }
       const url=new URL(req.url,'http://'+req.headers.host),route=url.pathname;
-      if(route==='/api/state'&&req.method==='GET')return send(res,200,{ok:true,csrf,config:publicConfig(),catalog:CATALOG,jobs:state.jobs.filter(j=>!j.deletedAt).slice(-100).reverse().map(publicJob),assets:[...new Map([...Object.values(state.assets).slice(-200).reverse(),...state.projects.flatMap(p=>projectAssetIds(p.project).map(id=>state.assets[id])).filter(Boolean)].map(a=>[a.id,a])).values()],projects:state.projects,preferences:state.preferences||{}});
+      if(route==='/api/state'&&req.method==='GET')return send(res,200,{ok:true,csrf,config:publicConfig(),catalog:CATALOG,jobs:state.jobs.filter(j=>!j.deletedAt).slice(-100).reverse().map(publicJob),assets:[...new Map([...Object.values(state.assets).slice(-200).reverse(),...state.projects.flatMap(p=>projectAssetIds(p.project).map(id=>state.assets[id])).filter(Boolean)].map(a=>[a.id,a])).values()],projects:state.projects,attachments:Object.values(state.attachments).map(({file,...a})=>a),preferences:state.preferences||{}});
       if(route==='/api/jobs'&&req.method==='GET')return send(res,200,{ok:true,jobs:state.jobs.filter(j=>!j.deletedAt).slice(-100).reverse().map(publicJob)});
       if(route==='/api/model'&&req.method==='GET')return send(res,200,{ok:true,model:await providers.model(url.searchParams.get('id'))});
       if(route==='/api/models/search'&&req.method==='GET')return send(res,200,{ok:true,items:await providers.search(url.searchParams.get('q'))});
@@ -153,11 +156,25 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         const clean={};for(const id of ['original','cinematic','thumbnail','railify']){if(typeof presets[id]!=='string'||presets[id].length>8000)throw new LabError('Each preset must contain at most 8,000 characters.');clean[id]=presets[id];}
         state.preferences={...state.preferences,presets:clean};await save();return send(res,200,{ok:true,preferences:state.preferences});
       }
+      if(route==='/api/research/profile'&&req.method==='GET'){const key=profileKey(url.searchParams.get('provider'),url.searchParams.get('model'));return send(res,200,{ok:true,profile:normalizeProfile(url.searchParams.get('defaults')==='1'?{}:state.preferences.researchProfiles?.[key])});}
+      if(route==='/api/research/profile'&&req.method==='POST'){
+        const b=await bodyJson(req),key=profileKey(b.provider,b.model),profile=normalizeProfile(b.profile);
+        state.preferences.researchProfiles={...state.preferences.researchProfiles,[key]:profile};await save();return send(res,200,{ok:true,profile,preferences:state.preferences});
+      }
+      if(route==='/api/attachments'&&req.method==='POST'){
+        const a=validateAttachment(await bodyJson(req)),id=randomUUID();await mkdir(path.join(data,'attachments'),{recursive:true});await writeFile(path.join(data,'attachments',id),a.bytes,{mode:0o600});
+        const item={id,name:a.name,mime:a.mime,kind:a.kind,bytes:a.bytes.length,url:'/attachments/'+id,createdAt:new Date().toISOString()};state.attachments[id]=item;await save();return send(res,200,{ok:true,attachment:item});
+      }
+      if(route.match(/^\/api\/projects\/[a-f0-9-]{36}\/rename$/)&&req.method==='POST'){
+        const b=await bodyJson(req),p=state.projects.find(x=>x.id===route.split('/')[3]);if(!p)throw new LabError('Saved session not found.',404);
+        if(typeof b.name!=='string'||!b.name.trim()||b.name.length>100)throw new LabError('Use a project name of 1–100 characters.');
+        p.name=b.name.trim();if(p.project&&'name' in p.project)p.project.name=p.name;p.updatedAt=new Date().toISOString();await save();return send(res,200,{ok:true,project:p});
+      }
       if(route==='/api/settings'&&req.method==='POST'){
-        config=await updateConfig(root,await bodyJson(req));providers.cache.clear();modelCatalog.clear();return send(res,200,{ok:true,config:publicConfig()});
+        const updates=await bodyJson(req);config=await updateConfig(root,updates);for(const [p,k] of Object.entries({replicate:'REPLICATE_API_TOKEN',openai:'OPENAI_API_KEY',xai:'XAI_API_KEY'}))if(updates[k]?.trim())delete keyTests[p];providers.cache.clear();modelCatalog.clear();return send(res,200,{ok:true,config:publicConfig()});
       }
       if(route==='/api/settings/test'&&req.method==='POST'){
-        const {provider}=await bodyJson(req);if(!['replicate','openai','xai'].includes(provider))throw new LabError('Unknown provider.');return send(res,200,await providers.test(provider));
+        const {provider}=await bodyJson(req);if(!['replicate','openai','xai'].includes(provider))throw new LabError('Unknown provider.');try{const result=await providers.test(provider);keyTests[provider]={status:'verified',at:new Date().toISOString()};return send(res,200,{...result,config:publicConfig()});}catch(e){keyTests[provider]={status:[401,403].includes(e.status)?'rejected':'unavailable',at:new Date().toISOString()};throw e;}
       }
       if(route==='/api/settings/webhook-key'&&req.method==='POST'){
         await bodyJson(req);const result=await providers.request('replicate','/webhooks/default/secret');
@@ -192,6 +209,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
           if(!['1024x1024','1536x1024','1024x1536','1536x864','2048x1152'].includes(job.options.size||'1536x1024'))throw new LabError('Choose a listed image size.');
           if(!['low','medium','high','auto'].includes(job.options.quality||'low'))throw new LabError('Choose a listed image quality.');
         }
+        if(b.provider!=='replicate'&&job.options.references!==undefined){if(!Array.isArray(job.options.references)||job.options.references.length>8||job.options.references.some(v=>typeof v!=='string'||!v.startsWith('/assets/')||!state.assets[v.slice(8)]||deletingAssets.has(v.slice(8))))throw new LabError('Use up to eight locally saved image references.');}
         if(b.provider==='xai'&&!['16:9','1:1','3:2','2:3','9:16'].includes(job.options.aspect_ratio||'16:9'))throw new LabError('Choose a listed aspect ratio.');
         state.jobs.push(job);await save();send(res,202,{ok:true,job:publicJob(job)});pump();return;
         }finally{submissions.delete(b.requestId);release();}
@@ -233,7 +251,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         const asset=state.assets[id];if(!asset)throw new LabError('Image not found.',404);
         const refs=state.projects.filter(p=>projectAssetIds(p.project).includes(id));
         if(refs.length)throw new LabError('This image is used by '+refs.length+' saved session(s). Delete or change those sessions first.',409,'asset_in_use');
-        if(state.jobs.some(j=>activeIds.has(j.id)&&(j.assets||[]).some(a=>a.id===id)))throw new LabError('This image is still being saved by a running job.',409,'asset_busy');
+        if(state.jobs.some(j=>!FINAL.has(j.status)&&((j.assets||[]).some(a=>a.id===id)||JSON.stringify(j.options||{}).includes('/assets/'+id))))throw new LabError('This image is still being saved by a running job.',409,'asset_busy');
         // Prevent a concurrent save from referencing an image being deleted.
         if(deletingAssets.has(id))throw new LabError('This image is already being deleted.',409,'asset_busy');
         deletingAssets.add(id);
@@ -245,15 +263,44 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
       }
       if(route==='/api/chat'&&req.method==='POST'){
         const b=await bodyJson(req);if(!['openai','xai'].includes(b.provider))throw new LabError('Choose GPT or Grok.');
-        if(!Array.isArray(b.messages)||b.messages.length>40||b.messages.some(m=>!['user','assistant'].includes(m.role)||typeof m.content!=='string')||JSON.stringify(b.messages).length>80000)throw new LabError('Conversation is too long. Start a new chat.');
+        if(!Array.isArray(b.messages)||!b.messages.length||b.messages.length>120||JSON.stringify(b.messages).length>600000)throw new LabError('Conversation exceeds this local POC limit. Start a new conversation.');
+        const clean=b.messages.map(m=>{
+          if(!['user','assistant'].includes(m.role)||typeof m.content!=='string'||m.content.length>150000)throw new LabError('Invalid conversation message.');
+          if(m.attachments!==undefined&&(!Array.isArray(m.attachments)||m.attachments.length>8||m.attachments.some(id=>typeof id!=='string'||!/^[a-f0-9-]{36}$/.test(id)||!state.attachments[id])||(m.attachments.length>0&&m.role!=='user')))throw new LabError('A chat attachment is invalid or missing.');
+          return {role:m.role,content:m.content,attachments:m.attachments||[]};
+        });
+        const ids=[...new Set(clean.flatMap(m=>m.attachments))];if(ids.reduce((n,id)=>n+state.attachments[id].bytes,0)>64*1024*1024)throw new LabError('Conversation attachments exceed 64 MB. Start a new chat with fewer files.',413);
         providers.key(b.provider);const model=String(b.model||config[b.provider==='openai'?'OPENAI_CHAT_MODEL':'XAI_CHAT_MODEL']);
-        if(!/^[a-zA-Z0-9_.:-]{1,180}$/.test(model)||modelKind(b.provider,model)==='image')throw new LabError('Choose a chat model from the provider dropdown.');
-        const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),180000);res.on('close',()=>controller.abort());
+        const key=profileKey(b.provider,model);if(modelKind(b.provider,model)==='image')throw new LabError('Choose a research model, not an image generator.');
+        const profile=normalizeProfile(state.preferences.researchProfiles?.[key]);
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),900000);res.on('close',()=>controller.abort());
         res.writeHead(200,{'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-store','Connection':'keep-alive'});
-        const event=(type,data)=>{if(!res.destroyed)res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);};
-        event('status',{message:'Waiting for '+model});
-        try{const result=await providers.chat(b.provider,b.messages,model,delta=>event('delta',{text:delta}),controller.signal);event('done',{completed:result.completed});}
-        catch(e){event('error',{message:sanitize(e.message,config)});}finally{clearTimeout(timer);res.end();}return;
+        const event=(type,d)=>{if(!res.destroyed)res.write(`event: ${type}\ndata: ${JSON.stringify(d)}\n\n`);};
+        event('status',{message:'Preparing '+model});
+        try{
+          const result=await providers.chat(b.provider,clean,model,delta=>event('delta',{text:delta}),controller.signal,{profile,onStatus:message=>event('status',{message}),resolveAttachment:async id=>{const a=state.attachments[id];return a?{...a,bytes:await readFile(path.join(data,'attachments',id))}:null;}});
+          const artifacts=[];
+          for(const f of result.files||[]){
+            if(b.provider!=='openai')continue;
+            try{
+              const u='https://api.openai.com/v1/containers/'+encodeURIComponent(f.containerId)+'/files/'+encodeURIComponent(f.fileId)+'/content';
+              const r=await providers.fetch(u,{headers:{Authorization:'Bearer '+providers.key('openai')},signal:AbortSignal.timeout(30000),redirect:'error'});if(!r.ok)throw new Error('Download failed');
+              const chunks=[];let size=0;for await(const c of r.body){size+=c.length;if(size>32*1024*1024)throw new Error('File exceeds 32 MB');chunks.push(Buffer.from(c));}
+              const id=randomUUID();await mkdir(path.join(data,'attachments'),{recursive:true});await writeFile(path.join(data,'attachments',id),Buffer.concat(chunks),{mode:0o600});const a={id,name:f.name,kind:'artifact',mime:'application/octet-stream',bytes:size,url:'/attachments/'+id,createdAt:new Date().toISOString()};state.attachments[id]=a;artifacts.push(a);
+            }catch{result.warning=[result.warning,'An analysis output could not be downloaded locally.'].filter(Boolean).join(' ');}
+          }
+          if(artifacts.length)await save();
+          event('done',{completed:result.completed,sources:result.sources,usage:result.usage,tools:result.tools,artifacts,warning:result.warning,cleanup:result.cleanup?.length?'Some provider file cleanup failed. Check the provider file console.':null});
+        }catch(e){event('error',{message:sanitize(e.message,config)});}finally{clearTimeout(timer);res.end();}return;
+      }
+      if(route.startsWith('/attachments/')&&req.method==='GET'){
+        const id=route.slice(13),a=state.attachments[id];if(!/^[a-f0-9-]{36}$/.test(id)||!a)throw new LabError('Attachment not found.',404);
+        res.setHeader('Content-Type',a.kind==='image'?a.mime:'application/octet-stream');res.setHeader('Cache-Control','private, no-store');
+        if(a.kind!=='image'||url.searchParams.has('download'))res.setHeader('Content-Disposition',"attachment; filename*=UTF-8''"+encodeURIComponent(a.name));
+        res.end(await readFile(path.join(data,'attachments',id)));return;
+      }
+      if(route.match(/^\/brand-assets\/(replicate|openai|xai)\.svg$/)&&req.method==='GET'){
+        const p=route.split('/')[2].slice(0,-4),file=brand.providers?.[p];if(!file)throw new LabError('Provider logo not installed locally.',404,'brand_asset_missing');res.setHeader('Content-Type','image/svg+xml');res.setHeader('Cache-Control','no-cache');res.end(await readFile(file));return;
       }
       if(route.startsWith('/assets/')&&req.method==='GET'){
         const id=route.slice(8),asset=state.assets[id];if(!asset||!/^[a-f0-9-]+\.(png|jpg|webp)$/.test(id))throw new LabError('Image not found.',404);
@@ -268,7 +315,7 @@ export async function createLab({root=HERE,fetchImpl=globalThis.fetch,pollDelay=
         if(!brand.logo)throw new LabError('Place your labs0.svg in assets/logos in the Lab repo or POC folder, then restart the Lab.',404,'brand_asset_missing');
         res.setHeader('Content-Type','image/svg+xml');res.setHeader('Cache-Control','no-cache');res.end(await readFile(brand.logo));return;
       }
-      const files={'/model-schema.js':'model-schema.js','/workspace.css':'workspace.css','/research':'index.html','/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/upgrade.css':'upgrade.css','/icons.svg':'icons.svg'};
+      const files={'/canvas-view.js':'canvas-view.js','/rich-text.js':'rich-text.js','/final-pass.css':'final-pass.css','/model-schema.js':'model-schema.js','/workspace.css':'workspace.css','/research':'index.html','/':'index.html','/index.html':'index.html','/style.css':'style.css','/app.js':'app.js','/upgrade.css':'upgrade.css','/icons.svg':'icons.svg'};
       if(req.method==='GET'&&files[route]){const file=files[route];res.setHeader('Content-Type',mime[path.extname(file)]);res.setHeader('Cache-Control','no-cache');res.end(await readFile(path.join(publicRoot,file)));return;}
       throw new LabError('Not found.',404,'not_found');
     }catch(e){if(res.headersSent){res.end();return;}send(res,e.status||500,{ok:false,error:sanitize(e.message,config),code:e.code||'local_error'});}

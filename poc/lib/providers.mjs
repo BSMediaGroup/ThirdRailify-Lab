@@ -1,3 +1,4 @@
+import {researchChat} from './research.mjs';
 import {workflowFor} from '../public/model-schema.js';
 import {LabError,CATALOG,parseModel,normalizeInputSchema,validateInput,isDeliveryUrl,imageType,sanitize,flattenOutput} from './core.mjs';
 
@@ -63,6 +64,18 @@ export class Providers {
       model:job.model||config.XAI_IMAGE_MODEL,prompt:job.prompt,n:1,
       aspect_ratio:v.aspect_ratio||'16:9',response_format:'b64_json'
     };
+    const refs=v.references||[];
+    if(refs.length){
+      if(p==='xai')return this.request(p,'/images/edits',{method:'POST',body:{...body,...(refs.length===1?{image:{url:refs[0]}}:{images:refs.map(url=>({url}))})},timeout:300000});
+      const form=new FormData();for(const [k,val] of Object.entries(body))form.set(k,String(val));
+      for(const [i,url] of refs.entries()){
+        const bytes=Buffer.from(url.split(',')[1],'base64'),t=imageType(bytes);form.append('image[]',new Blob([bytes],{type:t.mime}),'reference-'+i+'.'+t.ext);
+      }
+      let res;try{res=await this.fetch('https://api.openai.com/v1/images/edits',{method:'POST',headers:{Authorization:'Bearer '+this.key(p)},body:form,signal:AbortSignal.timeout(300000),redirect:'error'});}catch{throw new LabError('Image-edit submission interrupted. Check provider history before retrying.',502,'submission_uncertain');}
+      let data;try{data=await res.json();}catch{throw new LabError('Image edit did not return JSON.',502);}
+      if(!res.ok)throw new LabError(sanitize(data?.error?.message||'Image edit rejected.',this.config()),res.status);
+      return data;
+    }
     return this.request(p,'/images/generations',{method:'POST',body,timeout:300000});
   }
   async downloadReplicate(url){
@@ -83,29 +96,10 @@ export class Providers {
     throw new LabError('Too many output redirects.',502);
   }
   outputUrls(prediction){return flattenOutput(prediction.output);}
-  async chat(provider,messages,model,onDelta,signal){
-    const key=this.key(provider),base=provider==='openai'?'https://api.openai.com/v1':'https://api.x.ai/v1';
-    const body={model,input:[{role:'system',content:'You are the Third Railify Lab creative research assistant. Help develop image prompts, thumbnail concepts and research questions. This POC has NO web search tool: do not claim to browse, verify live facts or access the canvas. Say when external verification is needed. Never present hidden chain-of-thought.'},...messages],stream:true,store:false,max_output_tokens:3000};
-    let res;
-    try{res=await this.fetch(base+'/responses',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify(body),signal,redirect:'error'});}catch(e){throw new LabError('Chat connection interrupted. Any provider work already performed may still be billed.',502,'chat_network');}
-    if(!res.ok){let b;try{b=await res.json();}catch{}throw new LabError(sanitize(b?.error?.message||`Chat returned HTTP ${res.status}. Check model access, billing and key.`,this.config()),res.status);}
-    const decoder=new TextDecoder();let buffer='',text='',completed=false;
-    for await(const chunk of res.body){
-      buffer+=decoder.decode(chunk,{stream:true});
-      let end;
-      while((end=buffer.indexOf('\n'))>=0){
-        const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);
-        if(!line.startsWith('data:'))continue;
-        const raw=line.slice(5).trim();if(!raw||raw==='[DONE]')continue;
-        let event;try{event=JSON.parse(raw);}catch{continue;}
-        if(event.type==='response.output_text.delta'&&typeof event.delta==='string'){text+=event.delta;onDelta(event.delta);}
-        if(event.type==='response.completed')completed=true;
-        if(event.type==='error'||event.type==='response.failed')throw new LabError(sanitize(event.error?.message||event.response?.error?.message||event.message||'Chat failed.',this.config()),502);
-      }
-    }
-    if(!text)throw new LabError('The model returned no text. Check the selected model and output limits.',502);
-    return {completed,text};
+  async chat(provider,messages,model,onDelta,signal,options={}){
+    return researchChat(this,provider,messages,model,onDelta,signal,options);
   }
+
 }
 
 function httpsUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:null;}catch{return null;}}

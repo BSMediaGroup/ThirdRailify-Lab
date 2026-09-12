@@ -1,66 +1,23 @@
-# POC 0.3 release validation
+# Release verification — 0.4.0-poc
 
-## Current automated suite
+## Actual checks
 
-Node 22.16.0; `node --test`: **39 tests passed, zero failures**. This retains the
-26 prior server/model/catalog/config tests and adds 13 workspace/schema tests.
-Syntax checks cover server.mjs, all lib modules, public/app.js, public/model-schema.js
-and the package verification script. The runtime has no install/build dependency.
+- Node 22.16.0; dependency-free `node --test`: **63 passed, 0 failed**.
+- Includes the retained 39 prior scenarios plus 24 final-pass tests for research profiles, tool payloads, attachment bytes/persistence, second chat turn, cleanup on errors, generated-file download, OpenAI/Grok image editing, library rename, credential testing, safe Markdown, canvas geometry and static modules.
+- The old test requiring absent research tools was deliberately updated to the new requested web/analysis contract. Provider errors are still tested and never silently retried with features removed.
+- Browser interaction passed at 1920, 1440, 768 and 390 widths for Settings, Brand Assets and Connections, with no document overflow or application exceptions. Desktop flows exercised image width/center/zoom/pan/portrait fit/window lock, model-profile save/readback, two multimodal conversation turns with formatted sources/usage, and Library save/rename.
+- Viewed representative desktop and mobile captures. These use fallback fonts/initial logo placeholders because the user's local brand files are unavailable. No fonts are bundled.
 
-The workspace tests cover prompt-free two-image generation with the real local
-HTTP API, schema-required prompts, optional defaults, rejected unknown/missing
-inputs before submission, retained job/session identity, uploaded reference-asset
-materialization, saved-project reference protection, restart persistence, safe
-metadata/preview values, required image arrays, preset persistence, legacy
-projects, static routes and Research rendering resources.
+## Browser boundary
 
-All provider traffic is simulated/injected. No API keys, real inference charges,
-provider account mutations, live login or hosted webhook were used.
+Native navigation is blocked by this environment's managed Chromium policy (`ERR_BLOCKED_BY_ADMINISTRATOR`). Browser tests used an about:blank document with a same-local-server transport bridge, inline SVG sprite references, and test-only browser-storage/UUID shims. The actual UI scripts/styles and real local server handlers were exercised; provider responses were simulated. This is not Windows/Brave native popout or persistent cross-window acceptance. Native fullscreen/window and browser-storage synchronization remain user-environment checks; no claim of paid live generation or real provider authentication is made.
 
-## Package checks for this release
+## Packaging checks
 
-The completed ZIP is extracted into a fresh directory, its full manifest is
-verified, the 39-test suite is rerun there, and the actual extracted server is
-started with external provider requests disabled. The smoke check loads the
-main shell, Research route, all three stylesheets, both browser scripts, and the
-SVG icon resource with their expected content types. It verifies that the new
-workspace controls are present and that private configuration paths are not
-served. All required unchanged 0.2 runtime files are included, not assumed to
-exist on the user's machine.
+The final ZIP is tested after extraction, not just from the source directory. Release manifest and startup/static/API smoke checks are run on that extracted copy. An overwrite fixture starts with the actual 0.3 complete package, an existing `.env`, saved project/research, local image, custom asset and repository marker. Overlaying the new archive must preserve protected bytes and return the prior saved work from the new server. The release report is recorded in the accompanying package-check output.
 
-A second installation check overlays the same ZIP onto an extracted 0.2 package
-with synthetic existing .env, .data/state.json, a saved project/image, user asset
-and repository-marker files. Protected file hashes are compared before/after the
-overlay and after read-only server smoke checks. The old saved project and image
-are read back through the current API. The prior individual-file 0.3 handoff is
-not needed to install this release.
+Windows launchers are included with their existing direct-Node execution and no npm/build dependency. The server and tests were executed on Linux Node 22.16.0; Windows .cmd execution itself was not run in this environment.
 
-Archive checks reject .env, .data, .git, user assets, font binaries, dependency
-folders, symlinks and unsafe paths. PACKAGE-MANIFEST.json records the length and
-SHA-256 of every other included file. The manifest itself is not self-hashed.
-The release contains CRLF Windows launchers and no npm-based launch requirement.
+## Deliberate limits
 
-## UI evidence retained from the workspace implementation
-
-The preceding workspace implementation reported browser checks at 1920, 1440,
-768 and 390 pixels for shared tabs/research, generating while switching projects,
-saving/reopening/discarding, final-tab Library fallback, layout menu, overlay
-auto-hide, panel resizing, collapsible model controls and model-specific inputs.
-It used actual HTML/CSS/JS with a local HTTP bridge because the managed Chromium
-runtime blocks ordinary navigation. Prior visual captures used font fallbacks
-and a missing-logo placeholder; the user's actual fonts/SVG were not supplied.
-
-Those historical browser checks are not a claim of paid live model testing or
-native Windows navigation. The final packaging pass is specifically a fresh-ZIP,
-overwrite-preservation, static-resource and automated-regression verification.
-Windows .cmd execution on a Windows machine, native popup/tab navigation and
-user-account paid API acceptance remain unverified in this Linux environment.
-
-The previous version's detailed historical test record is in TESTING-0.2.md.
-
-## Reproduce without changing your data
-
-RUN-TESTS.cmd runs the automated tests in temporary fixture directories; they do
-not load the installation's real .env/.data. VERIFY-PACKAGE.cmd checks release
-files only and does not change the application, private data or provider state.
-Both scripts call Node directly. Running tests/checks is optional for using the POC.
+The application is local single-user software. Login/Turnstile, multi-key management, billing history/balances, brand collection management and embedded Google Images are scaffolded. Voice/video attachments are not implemented. Model listing and a saved key do not guarantee tools or endpoint support. No paid provider requests or user credentials were used in validation.
