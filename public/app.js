@@ -1,6 +1,6 @@
 import {CanvasView} from './canvas-view.js';
 import {renderMarkdown,safeUrl} from './rich-text.js';
-import {workflowFor,isImageField,safeImageUrl,missingInputs,preparePrompt} from './model-schema.js';
+import {workflowFor,isFileField,classifySchemaField,fileArrayLimit,inputErrors,isLabAssetReference,labAssetReference,safeHttpsUrl,safeImageUrl,preparePrompt} from './model-schema.js';
 import { labSession, scopedStorage, storagePrefix, updateAccountWidget, signOut } from './session.js';
 import {renderGoogleImageResults} from './google-image-renderer.js';
 const localStorage=scopedStorage;
@@ -23,7 +23,7 @@ function error(text){$('mainError').textContent=text;$('mainError').hidden=!text
 async function api(route,{method='GET',body,signal}={}){
   if(method==='POST'&&body){
     body={...body};
-    if(['/api/import','/api/export','/api/attachments','/api/generate'].includes(route)){body.projectId=body.projectId||body.sessionId||state.activeSessionId;if(!body.projectId)throw new Error('Open a project first.');await ensureRemoteProject(body.projectId);}
+    if(['/api/import','/api/export','/api/attachments','/api/model-assets','/api/generate'].includes(route)){body.projectId=body.projectId||body.sessionId||state.activeSessionId;if(!body.projectId)throw new Error('Open a project first.');await ensureRemoteProject(body.projectId);}
     if(route==='/api/projects')body.revision=projectRevisions.get(body.id)||0;
     const match=route.match(/^\/api\/projects\/([^/]+)\//);if(match)body.revision=projectRevisions.get(match[1])||0;
     if(['/api/preferences','/api/research/profile','/api/settings'].includes(route))body.revision=state.preferencesRevision||0;
@@ -125,45 +125,75 @@ function rememberInputs(){
   if(state.provider!=='replicate')return;
   for(const el of $('parameterForm').querySelectorAll('[data-param]'))state.paramValues[el.dataset.param]=el.value;
 }
+function storedFile(assetId){return [...state.assets,...(state.attachments||[])].find(asset=>asset.id===assetId)||null;}
+function upgradeFileValue(value){
+  if(typeof value==='string'){const match=value.match(/^\/(?:assets|attachments)\/([a-f0-9-]{36}(?:\.(?:png|jpg|webp|gif))?)$/);return match?labAssetReference(match[1]):value;}
+  if(Array.isArray(value))return value.map(upgradeFileValue);
+  return value;
+}
+function fileItems(key){const value=state.fileInputs[key];return value===undefined?[]:(Array.isArray(value)?value:[value]);}
+function fieldAccept(field){const media=classifySchemaField('',field).media;return media==='image'?'image/png,image/jpeg,image/webp,image/gif':media==='audio'?'audio/mpeg,audio/wav,audio/flac,audio/mp4,audio/webm':media==='video'?'video/mp4,video/webm':'.png,.jpg,.jpeg,.webp,.gif,.pdf,.zip,.mp3,.wav,.flac,.mp4,.mov,.webm';}
+function fieldName(key){return state.model?.schema?.properties?.[key]?.title||key.replaceAll('_',' ');}
 function renderParameters(){
   if(state.provider!=='replicate')return;
   const m=state.model;
   if(!m){$('parameterForm').innerHTML='<div class="soft-note">Connect Replicate and load the selected model to view its real inputs.</div>';$('fieldCount').textContent='—';renderWorkflow();return;}
-  const fields=Object.entries(m.schema.properties||{}).filter(([k])=>k!==m.promptKey).sort((a,b)=>(a[1]['x-order']??99)-(b[1]['x-order']??99));
+  const fields=Object.entries(m.schema.properties||{}).filter(([k])=>k!==m.promptKey).sort((a,b)=>(a[1]['x-lab-order']??a[1]['x-order']??99)-(b[1]['x-lab-order']??b[1]['x-order']??99));
   $('fieldCount').textContent=fields.length+' FIELDS';
   $('parameterForm').innerHTML=fields.map(([key,p])=>{
-    const required=(m.schema.required||[]).includes(key),name=p.title||key.replaceAll('_',' '),id='param_'+key,val=state.paramValues[key]??p.default??'';
-    const attrs=`id="${esc(id)}" data-param="${esc(key)}" data-type="${esc(p.type||'string')}" aria-required="${required}"`;
+    const required=(m.schema.required||[]).includes(key),name=fieldName(key),id='param_'+key,val=state.paramValues[key]??p.default??'',classification=classifySchemaField(key,p),kind=classification.kind;
+    const attrs=`id="${esc(id)}" data-param="${esc(key)}" data-type="${esc(kind)}" aria-required="${required}"`;
     let control;
-    if(p.enum)control=`<select ${attrs}><option value="">Provider default${required?' / choose':''}</option>${p.enum.map(v=>`<option value="${esc(String(v))}" ${String(v)===String(val)?'selected':''}>${esc(String(v))}</option>`).join('')}</select>`;
-    else if(p.type==='boolean')control=`<select ${attrs}><option value="">Provider default</option><option value="true" ${String(val)==='true'?'selected':''}>Yes</option><option value="false" ${String(val)==='false'?'selected':''}>No</option></select>`;
-    else if(p.type==='integer'||p.type==='number')control=`<input ${attrs} type="number" value="${esc(val)}" step="${p.type==='integer'?1:'any'}" ${p.minimum!==undefined?`min="${p.minimum}"`:''} ${p.maximum!==undefined?`max="${p.maximum}"`:''} placeholder="Provider default">`;
-    else if(p.type==='array'||p.type==='object')control=`<textarea ${attrs} rows="2" placeholder='${p.type==='array'?'[ ]':'{ }'}'>${esc(typeof val==='string'?val:JSON.stringify(val))}</textarea>`;
-    else control=`<input ${attrs} value="${esc(val)}" placeholder="${isImageField(key,p)?'HTTPS image URL or attach below':'Provider default'}">`;
-    const media=isImageField(key,p);
-    const upload=media?`<input type="file" accept="image/png,image/jpeg,image/webp" data-reference="${esc(key)}" ${p.type==='array'?'multiple':''} aria-label="Upload ${esc(name)}"><small data-file-note="${esc(key)}">Saved locally first. Sent to the provider only when you generate.</small><div class="input-preview" data-preview="${esc(key)}"></div><button type="button" class="text-button input-clear" data-clear-input="${esc(key)}">Clear image${p.type==='array'?'s':''}</button>`:'';
-    return `<div class="field"><label for="${esc(id)}">${esc(name)}${required?' *':''}</label>${control}${upload}<small>${esc((p.description||'').slice(0,350))}</small></div>`;
+    if(kind==='enum')control=`<select ${attrs}><option value="">Provider default${required?' / choose':''}</option>${p.enum.map(value=>`<option value="${esc(String(value))}" ${String(value)===String(val)?'selected':''}>${esc(String(value))}</option>`).join('')}</select>`;
+    else if(kind==='boolean')control=`<select ${attrs}><option value="">Provider default</option><option value="true" ${String(val)==='true'?'selected':''}>Yes</option><option value="false" ${String(val)==='false'?'selected':''}>No</option></select>`;
+    else if(kind==='integer'||kind==='number')control=`<input ${attrs} type="number" value="${esc(val)}" step="${kind==='integer'?1:'any'}" ${p.minimum!==undefined?`min="${p.minimum}"`:''} ${p.maximum!==undefined?`max="${p.maximum}"`:''} placeholder="Provider default">`;
+    else if(kind==='number_array'||kind==='object')control=`<textarea ${attrs} rows="2" placeholder='${kind==='number_array'?'[ ]':'{ }'}'>${esc(typeof val==='string'?val:JSON.stringify(val))}</textarea>`;
+    else if(kind==='file')control=`<input ${attrs} type="url" value="${esc(typeof val==='string'?val:'')}" placeholder="HTTPS URL, or attach a private file below">`;
+    else if(kind==='file_array')control=`<input ${attrs} type="hidden" value=""><div class="file-array-url"><input type="url" data-array-url="${esc(key)}" placeholder="Add an HTTPS URL"><button type="button" class="button compact" data-add-url="${esc(key)}">Add URL</button></div>`;
+    else if(kind==='string')control=`<input ${attrs} type="${classification.semantic==='url'?'url':'text'}" value="${esc(val)}" placeholder="${classification.semantic==='url'?'HTTPS URL':'Provider default'}">`;
+    else control=`<div class="unsupported-input" role="note">Input type not yet supported <small>${esc(p['x-lab-unsupported-reason']||classification.reason||'complex schema')}</small></div>`;
+    const fileCapable=['file','file_array'].includes(kind),currentCount=fileItems(key).length,max=kind==='file_array'?fileArrayLimit(p):1;
+    const upload=fileCapable?`<input type="file" accept="${fieldAccept(p)}" data-reference="${esc(key)}" ${kind==='file_array'?'multiple':''} aria-label="Upload ${esc(name)}"><small data-file-note="${esc(key)}">${currentCount?`${currentCount} private file${currentCount===1?'':'s'} ready`:'URL or attach · private files are sent only when you generate'}</small><div class="input-preview ${kind==='file_array'?'reference-tray':''}" data-preview="${esc(key)}"></div><button type="button" class="text-button input-clear" data-clear-input="${esc(key)}">Clear ${kind==='file_array'?'files':'file'}</button><small>Up to ${max} ${classification.media==='file'?'supported file':classification.media}${max===1?'':'s'} · 16 MB each</small>`:'';
+    return `<div class="field" data-field="${esc(key)}"><label for="${esc(id)}">${esc(name)}${required?' *':''}</label>${control}${upload}<small>${esc((p.description||'').slice(0,350))}</small><small class="input-missing" data-field-error="${esc(key)}" hidden></small></div>`;
   }).join('')||'<div class="soft-note">This model uses only the prompt.</div>';
   $('parameterForm').querySelectorAll('[data-reference]').forEach(el=>el.onchange=async()=>{
     const sid=state.activeSessionId,model=state.modelId,key=el.dataset.reference,files=[...el.files];if(!files.length)return;
     state.inputBusy++;renderWorkflow();
     try{
-      if(files.length>4)throw new Error('Up to four reference images per field in this POC.');if(files.some(f=>f.size>5*1024*1024))throw new Error('Each reference image must be 5 MB or smaller.');
-      const assets=[];for(const file of files){const r=await api('/api/import',{method:'POST',body:{dataUrl:await readFile(file),title:'Input · '+file.name}});assets.push(r.asset);state.assets.unshift(r.asset);}
+      const schema=state.model.schema.properties[key],kind=classifySchemaField(key,schema).kind,max=kind==='file_array'?fileArrayLimit(schema):1,current=kind==='file_array'?fileItems(key):[];
+      if(current.length+files.length>max)throw new Error(`${fieldName(key)} accepts at most ${max} file${max===1?'':'s'}.`);if(files.some(file=>file.size>16*1024*1024))throw new Error('Each model input file must be 16 MB or smaller.');
+      const assets=[];for(const file of files){const result=await api('/api/model-assets',{method:'POST',body:{name:file.name,dataUrl:await readFile(file),title:'Input · '+file.name}});assets.push(result.asset);if(result.asset.kind==='image')state.assets.unshift(result.asset);else state.attachments.unshift(result.asset);}
       if(sid!==state.activeSessionId||model!==state.modelId){toast('Inputs saved to Library. The original model/session is no longer active.');return;}
-      const urls=assets.map(a=>a.url);state.fileInputs[key]=el.multiple?urls:urls[0];state.paramValues[key]='';$('param_'+key).value='';
-      el.parentElement.querySelector('[data-file-note]').textContent=files.map(f=>f.name).join(', ')+' · saved privately';renderInputPreview(key);captureSession();
+      const refs=assets.map(asset=>labAssetReference(asset.id));state.fileInputs[key]=kind==='file_array'?[...current,...refs]:refs[0];state.paramValues[key]='';renderParameters();await syncPrimaryReferenceCanvas(key);captureSession();
     }catch(e){el.value='';toast(e.message,true);}finally{state.inputBusy--;renderWorkflow();}
   });
-  $('parameterForm').querySelectorAll('[data-param]').forEach(el=>el.addEventListener('input',()=>{delete state.fileInputs[el.dataset.param];state.paramValues[el.dataset.param]=el.value;renderInputPreview(el.dataset.param);captureSession();renderWorkflow();}));
-  $('parameterForm').querySelectorAll('[data-clear-input]').forEach(b=>b.onclick=()=>{const k=b.dataset.clearInput;delete state.fileInputs[k];state.paramValues[k]='';$('param_'+k).value='';const f=b.parentElement.querySelector('[data-reference]');if(f)f.value='';renderInputPreview(k);captureSession();renderWorkflow();});
-  for(const [k,p] of fields)if(isImageField(k,p))renderInputPreview(k);renderWorkflow();
+  $('parameterForm').querySelectorAll('[data-param]:not([type=hidden])').forEach(el=>el.addEventListener('input',()=>{delete state.fileInputs[el.dataset.param];state.paramValues[el.dataset.param]=el.value;renderInputPreview(el.dataset.param);captureSession();renderWorkflow();}));
+  $('parameterForm').querySelectorAll('[data-add-url]').forEach(button=>button.onclick=()=>{const key=button.dataset.addUrl,input=$('parameterForm').querySelector(`[data-array-url="${CSS.escape(key)}"]`),url=safeHttpsUrl(input.value),field=state.model.schema.properties[key],items=fileItems(key);if(!url)return renderFieldErrors([{field:key,message:`${key}: enter an HTTPS URL without embedded credentials`}]);if(items.length>=fileArrayLimit(field))return renderFieldErrors([{field:key,message:`${key}: accepts at most ${fileArrayLimit(field)} items`}]);state.fileInputs[key]=[...items,url];state.paramValues[key]='';renderParameters();void syncPrimaryReferenceCanvas(key);captureSession();});
+  $('parameterForm').querySelectorAll('[data-clear-input]').forEach(button=>button.onclick=()=>{const key=button.dataset.clearInput;delete state.fileInputs[key];state.paramValues[key]='';renderParameters();void syncPrimaryReferenceCanvas();captureSession();renderWorkflow();});
+  for(const [key,field] of fields)if(isFileField(key,field))renderInputPreview(key);renderWorkflow();void syncPrimaryReferenceCanvas();
 }
-function fieldImages(key){let v=state.fileInputs[key];if(v===undefined){const el=$('param_'+key);v=el?.value||state.paramValues[key]||'';if(el?.dataset.type==='array')try{v=JSON.parse(v);}catch{v=[];}}return (Array.isArray(v)?v:[v]).map(safeImageUrl).filter(Boolean).slice(0,4);}
+function fieldImages(key){return fileItems(key).map(value=>isLabAssetReference(value)?storedFile(value.assetId)?.mime?.startsWith('image/')?storedFile(value.assetId).url:'':safeImageUrl(value)).filter(Boolean).slice(0,20);}
 function renderInputPreview(key){
   const box=[...$('parameterForm').querySelectorAll('[data-preview]')].find(n=>n.dataset.preview===key);if(!box)return;
-  box.innerHTML=fieldImages(key).map(url=>`<div class="input-preview-item"><img src="${esc(url)}" alt="${esc(key.replaceAll('_',' '))} preview" referrerpolicy="no-referrer"><small>${url.startsWith('/assets/')?'Local input · ready':'Direct URL · preview'}</small></div>`).join('');
-  box.querySelectorAll('img').forEach(img=>img.onerror=()=>{img.hidden=true;const t=img.nextElementSibling;t.className='preview-error';t.textContent='Preview unavailable. Check that this URL is an accessible image.';});
+  const items=fileItems(key),multiple=classifySchemaField(key,state.model.schema.properties[key]).kind==='file_array';
+  box.innerHTML=items.map((value,index)=>{const assetRef=isLabAssetReference(value),asset=assetRef?storedFile(value.assetId):null,missing=assetRef&&!asset,url=asset?.mime?.startsWith('image/')?asset.url:typeof value==='string'?safeImageUrl(value):'',label=asset?.name||asset?.title||(missing?'Saved private file':`HTTPS reference ${index+1}`),dimensions=asset?.width&&asset?.height?` · ${asset.width} × ${asset.height}`:'',status=asset?`Private · ready${dimensions}`:missing?'Missing or deleted':'Direct HTTPS URL';return `<div class="input-preview-item${missing?' missing':''}" data-preview-index="${index}">${url?`<button type="button" class="preview-canvas" data-canvas-reference="${index}" title="Show ${esc(label)} on canvas"><img src="${esc(url)}" alt="${esc(fieldName(key))} preview" referrerpolicy="no-referrer"></button>`:`<div class="file-preview-glyph">${icon('document')}<span>${esc(label)}</span></div>`}<small${missing?' class="preview-error"':''}>${esc(label)} · ${status}</small>${multiple?`<div class="reference-order"><button type="button" data-move-reference="up" data-index="${index}" ${index===0?'disabled':''} aria-label="Move ${esc(label)} earlier">↑</button><button type="button" data-move-reference="down" data-index="${index}" ${index===items.length-1?'disabled':''} aria-label="Move ${esc(label)} later">↓</button><button type="button" data-remove-reference="${index}" aria-label="Remove ${esc(label)}">Remove</button></div>`:''}</div>`;}).join('');
+  box.querySelectorAll('img').forEach(img=>img.onerror=()=>{img.hidden=true;const t=img.closest('.input-preview-item').querySelector('small');t.className='preview-error';t.textContent='Preview unavailable. The saved reference remains intact.';});
+  box.querySelectorAll('[data-canvas-reference]').forEach(button=>button.onclick=()=>showFieldReference(key,Number(button.dataset.canvasReference)).catch(error=>toast(error.message,true)));
+  box.querySelectorAll('[data-remove-reference]').forEach(button=>button.onclick=()=>{const items=fileItems(key);items.splice(Number(button.dataset.removeReference),1);state.fileInputs[key]=items;renderParameters();void syncPrimaryReferenceCanvas();captureSession();});
+  box.querySelectorAll('[data-move-reference]').forEach(button=>button.onclick=()=>{const items=fileItems(key),from=Number(button.dataset.index),to=button.dataset.moveReference==='up'?from-1:from+1;if(to<0||to>=items.length)return;[items[from],items[to]]=[items[to],items[from]];state.fileInputs[key]=items;renderParameters();captureSession();});
+}
+
+function renderFieldErrors(errors=[]){
+  $('parameterForm').querySelectorAll('[data-field-error]').forEach(node=>{node.hidden=true;node.textContent='';});$('parameterForm').querySelectorAll('[aria-invalid]').forEach(node=>node.removeAttribute('aria-invalid'));
+  for(const issue of errors){const node=$('parameterForm').querySelector(`[data-field-error="${CSS.escape(issue.field)}"]`),control=$('parameterForm').querySelector(`[data-param="${CSS.escape(issue.field)}"],[data-array-url="${CSS.escape(issue.field)}"]`);if(node){node.hidden=false;const prefix=issue.field+': ';node.textContent=issue.message.startsWith(prefix)?issue.message.slice(prefix.length):issue.message;}control?.setAttribute('aria-invalid','true');}
+}
+
+async function showFieldReference(key,index=0){const value=fileItems(key)[index];if(!value)return;if(isLabAssetReference(value)){const asset=storedFile(value.assetId);if(!asset)throw new Error(`${fieldName(key)}: uploaded asset is missing or deleted.`);if(!asset.mime?.startsWith('image/'))return;await selectAsset(asset,key);return;}const url=safeImageUrl(value);if(url)await selectAsset({id:null,url,title:fieldName(key),source:'direct-reference',bytes:0},key);}
+async function syncPrimaryReferenceCanvas(preferredKey=null){
+  if(state.selected?.source==='generation')return;
+  const workflow=workflowFor(state.model),keys=[preferredKey,...workflow.fileKeys].filter((key,index,list)=>key&&list.indexOf(key)===index);
+  for(const key of keys){const items=fileItems(key);for(let index=0;index<items.length;index++){const value=items[index],asset=isLabAssetReference(value)?storedFile(value.assetId):null;if(asset?.mime?.startsWith('image/')||typeof value==='string'&&safeImageUrl(value)){await showFieldReference(key,index);return;}}}
+  if(['model-input','direct-reference'].includes(state.selected?.source)){state.image=null;state.selected=null;state.canvasInputKey=null;$('resultImage').removeAttribute('src');renderStage();}
 }
 
 function collectInputs(){
@@ -172,14 +202,19 @@ function collectInputs(){
     const key=el.dataset.param,type=el.dataset.type,v=el.value;
     if(state.fileInputs[key]!==undefined){data[key]=state.fileInputs[key];continue;}
     if(v==='')continue;
-    if(type==='integer'||type==='number')data[key]=Number(v);
+    if(type==='enum'){const field=state.model.schema.properties[key];data[key]=field.enum.find(value=>String(value)===v);}
+    else if(type==='integer'||type==='number')data[key]=Number(v);
     else if(type==='boolean')data[key]=v==='true';
-    else if(type==='array'||type==='object'){try{data[key]=JSON.parse(v);}catch{throw new Error(`Enter valid JSON for ${key}, or leave it empty.`);}}
+    else if(type==='number_array'||type==='object'){try{data[key]=JSON.parse(v);}catch{throw new Error(`Enter valid JSON for ${key}, or leave it empty.`);}}
     else data[key]=v;
   }
   let extra={};try{extra=JSON.parse($('advancedJson').value||'{}');}catch{throw new Error('Advanced input JSON is invalid.');}
   if(!extra||Array.isArray(extra)||typeof extra!=='object')throw new Error('Advanced inputs must be a JSON object.');
   return {...data,...extra};
+}
+function localAssetIssues(input){
+  const issues=[];for(const [key,field] of Object.entries(state.model?.schema?.properties||{})){if(!isFileField(key,field))continue;const media=classifySchemaField(key,field).media;for(const value of Array.isArray(input[key])?input[key]:[input[key]]){if(!isLabAssetReference(value))continue;const asset=storedFile(value.assetId);if(!asset)issues.push({field:key,code:'asset_missing',message:`${key}: uploaded asset is missing or deleted`});else if(media!=='file'&&!asset.mime?.startsWith(media+'/'))issues.push({field:key,code:'asset_mime_unsupported',message:`${key}: the model expects a compatible ${media} file`});}}
+  return issues;
 }
 function updateDirectControls(){
   if(state.provider==='replicate'||!state.config)return;
@@ -199,7 +234,7 @@ on('generate','click',async()=>{
     const w=provider==='replicate'?workflowFor(state.model):{hasPrompt:true,promptRequired:true};
     if(w.hasPrompt&&prompt&&state.style)prompt+='\n\nArt direction: '+state.style;
     if(provider==='replicate'){
-      input=preparePrompt(input,state.model,w.hasPrompt?prompt:undefined);const missing=missingInputs(input,state.model.schema);if(missing.length)throw new Error('Required inputs: '+missing.map(k=>state.model.schema.properties[k]?.title||k).join(', '));
+      input=preparePrompt(input,state.model,w.hasPrompt?prompt:undefined);const issues=[...inputErrors(input,state.model.schema,'submitted'),...localAssetIssues(input)];renderFieldErrors(issues);if(issues.length)throw new Error(issues[0].message);
     }else if(!prompt)throw new Error('Enter your generation prompt first.');
     const model=provider==='replicate'?state.modelId:$('imageModelSelect').value;if(!model||(provider!=='replicate'&&$('imageModelSelect').disabled))throw new Error('Choose an image model. Refresh the model list if needed.');
     const options=provider==='openai'?{size:$('directSize').value,quality:$('directQuality').value}:provider==='xai'?{aspect_ratio:$('directRatio').value}:{};
@@ -236,10 +271,10 @@ async function refreshJobs(){
 }
 on('cancelCurrent','click',async()=>{if(!state.currentJob)return;await api('/api/jobs/'+state.currentJob+'/cancel',{method:'POST',body:{}});await refreshJobs();});
 
-async function selectAsset(asset){
+async function selectAsset(asset,inputKey=null){
   if(!state.activeSessionId&&!state.restoring)await newSession();const sid=state.activeSessionId;const image=new Image();image.src=asset.url;
   try{await image.decode();}catch{throw new Error('Saved image could not be decoded. Open the library and check its download.');}
-  if(sid!==state.activeSessionId)return;state.selected=asset;state.image=image;$('resultImage').src=asset.url;$('resultImage').alt=asset.title||'Generated or imported image';
+  if(sid!==state.activeSessionId)return;state.selected=asset;state.image=image;state.canvasInputKey=inputKey;$('resultImage').src=asset.url;$('resultImage').alt=inputKey?`${fieldName(inputKey)} reference`:asset.title||'Generated or imported image';
   $('useThumbnail').disabled=false;$('downloadOriginal').disabled=false;renderStage();renderHistory();captureSession();
 }
 async function applyAssetToSession(sid,asset,mode){
@@ -250,8 +285,8 @@ async function applyAssetToSession(sid,asset,mode){
 function renderStage(){
   const thumb=state.mode==='thumbnail';$('emptyStage').hidden=Boolean(state.image)||thumb;$('resultImage').hidden=!state.image||thumb;$('thumbCanvas').hidden=!thumb;
   if(thumb){drawThumbnail();$('canvasLabel').textContent='COMPOSER / EDITABLE TEXT';}
-  else $('canvasLabel').textContent='CANVAS / ORIGINAL';
-  $('assetMeta').textContent=state.image?`${state.image.naturalWidth} × ${state.image.naturalHeight} · ${state.selected.source==='generation'?'Generated original':state.selected.source==='thumbnail'?'Thumbnail export':'Local image'} · ${Math.round(state.selected.bytes/1024)} KB`:'Original framing preserved · No image loaded';
+  else $('canvasLabel').textContent=state.canvasInputKey?`CANVAS / REFERENCE · ${fieldName(state.canvasInputKey)}`:'CANVAS / ORIGINAL';
+  $('assetMeta').textContent=state.image?`${state.image.naturalWidth} × ${state.image.naturalHeight} · ${state.canvasInputKey?'Reference input':state.selected.source==='generation'?'Generated original':state.selected.source==='thumbnail'?'Thumbnail export':'Local image'}${state.selected.bytes?` · ${Math.round(state.selected.bytes/1024)} KB`:''}`:'Original framing preserved · No image loaded';
   renderJob();canvasView?.update();renderStudioAttachments();
 }
 function renderHistory(){
@@ -447,8 +482,8 @@ async function importedImageTarget(asset,sid,destination,chatTarget=chatProvider
   setMode('generate');
   if(state.provider!=='replicate'){state.directReferences=[...(state.directReferences||[]),asset.url].slice(-8);captureSession();renderStudioAttachments();toast('Imported image added to the active image model references.');return;}
   if(!state.model&&state.config.keys.REPLICATE_API_TOKEN)await loadModel(state.modelId);
-  const fields=Object.entries(state.model?.schema?.properties||{}).filter(([key,value])=>isImageField(key,value));
-  const attach=key=>{const schema=state.model.schema.properties[key],current=state.fileInputs[key];state.fileInputs[key]=schema.type==='array'?[...(Array.isArray(current)?current:current?[current]:[]),asset.url].slice(-4):asset.url;state.paramValues[key]='';renderParameters();captureSession();toast(`Imported image added to ${schema.title||key}.`);};
+  const fields=Object.entries(state.model?.schema?.properties||{}).filter(([key,value])=>isFileField(key,value)&&classifySchemaField(key,value).media==='image');
+  const attach=key=>{const schema=state.model.schema.properties[key],kind=classifySchemaField(key,schema).kind,current=fileItems(key),ref=labAssetReference(asset.id);state.fileInputs[key]=kind==='file_array'?[...current,ref].slice(-fileArrayLimit(schema)):ref;state.paramValues[key]='';renderParameters();void syncPrimaryReferenceCanvas(key);captureSession();toast(`Imported image added to ${schema.title||key}.`);};
   if(fields.length===1)return attach(fields[0][0]);
   if(fields.length>1){if(!$('imageResultTargetDialog')){const dialog=document.createElement('dialog');dialog.id='imageResultTargetDialog';dialog.innerHTML=`<form class="dialog-head" method="dialog"><h2>Choose image input</h2><button class="icon-button" aria-label="Close input picker">${icon('close')}</button></form><div class="dialog-body" id="imageResultTargetList"></div>`;document.body.append(dialog);}$('imageResultTargetList').innerHTML=fields.map(([key,value])=>`<button type="button" class="input-target button full" data-result-target="${esc(key)}">${icon('image')}${esc(value.title||key)}<small>${esc(value.description||'Image input').slice(0,180)}</small></button>`).join('');$('imageResultTargetList').querySelectorAll('[data-result-target]').forEach(button=>button.onclick=()=>{$('imageResultTargetDialog').close();attach(button.dataset.resultTarget);});$('imageResultTargetDialog').showModal();return;}
   state.unassignedReferences=[...(state.unassignedReferences||[]),asset.url].slice(-8);captureSession();renderStudioAttachments();toast('Image saved in the project reference tray. The active model has no compatible image input.',true);
@@ -654,7 +689,7 @@ async function switchSession(id,capture=true){
   if(capture)captureSession(false);const token=++sessionSwitchToken;const d=readDoc(id);if(!d)return showLibrary();state.restoring=true;state.loadTicket++;state.activeSessionId=id;state.projectId=d.saved?id:null;state.remoteChatBusy=false;
   if(!state.researchOnly){const idx=workspaceIndex();idx.activeId=id;storageSet(WORKSPACE_KEY,idx);}
   try{
-    const g=d.generation||{};state.directReferences=g.options?.references||[];state.unassignedReferences=g.options?.referenceAssets||[];state.provider=g.provider||'replicate';state.modelId=g.modelId||'black-forest-labs/flux-schnell';state.model=g.model||null;state.style=g.style||'';state.presetId=g.presetId||'original';state.paramValues={...g.paramValues};state.fileInputs={...g.fileInputs};state.currentJob=d.currentJob||null;state.selected=null;state.image=null;
+    const g=d.generation||{};state.directReferences=g.options?.references||[];state.unassignedReferences=g.options?.referenceAssets||[];state.provider=g.provider||'replicate';state.modelId=g.modelId||'black-forest-labs/flux-schnell';state.model=g.model||null;state.style=g.style||'';state.presetId=g.presetId||'original';state.paramValues={...g.paramValues};state.fileInputs=Object.fromEntries(Object.entries(g.fileInputs||{}).map(([key,value])=>[key,upgradeFileValue(value)]));state.currentJob=d.currentJob||null;state.selected=null;state.image=null;state.canvasInputKey=null;
     $('prompt').value=g.prompt||'';$('advancedJson').value=g.advanced??(g.input?JSON.stringify(g.input,null,2):'');
     document.querySelectorAll('[data-provider]').forEach(b=>b.classList.toggle('active',b.dataset.provider===state.provider));$('replicateModelSection').hidden=state.provider!=='replicate';$('directModelSection').hidden=state.provider==='replicate';$('advancedSection').hidden=state.provider!=='replicate';
     if(state.provider==='replicate'){renderParameters();$('modelName').textContent=state.model?.name||state.modelId.split('/').pop();$('modelOwner').textContent=state.modelId.split('/')[0];$('schemaStatus').textContent=state.model?'Saved model schema · refresh to update':'Load model controls to continue';}
@@ -664,12 +699,13 @@ async function switchSession(id,capture=true){
     if(d.assetId){const a=state.assets.find(a=>a.id===d.assetId);if(a)await selectAsset(a);else toast('The saved image is missing; the project settings are intact.',true);}
     if(state.activeSessionId!==id)return;
     if(!d.assetId){$('resultImage').removeAttribute('src');$('useThumbnail').disabled=true;$('downloadOriginal').disabled=true;}
+    if(!state.selected||state.selected.source!=='generation')await syncPrimaryReferenceCanvas();
     renderStage();updateSessionLabel();
     if(state.researchOnly){const url=new URL(location.href);url.searchParams.set('session',id);history.replaceState({},'',url);}
   }finally{if(token===sessionSwitchToken)state.restoring=false;}
   if(state.activeSessionId===id&&state.provider==='replicate'&&!state.model&&state.config.keys.REPLICATE_API_TOKEN&&!state.researchOnly)loadModel(state.modelId).catch(e=>toast(e.message,true));
 }
-function resetCanvas(){state.image=null;state.selected=null;state.currentJob=null;$('resultImage').removeAttribute('src');$('useThumbnail').disabled=true;$('downloadOriginal').disabled=true;renderStage();renderHistory();}
+function resetCanvas(){state.image=null;state.selected=null;state.canvasInputKey=null;state.currentJob=null;$('resultImage').removeAttribute('src');$('useThumbnail').disabled=true;$('downloadOriginal').disabled=true;renderStage();renderHistory();}
 let pendingSessionDialog=null;
 function askSession({title,text,confirm='Save',discard=false,name=null}){
   if(pendingSessionDialog)return Promise.resolve(null);
@@ -784,9 +820,9 @@ function renderWorkflow(){
     $('contextInputs').innerHTML=w.imageKeys.map(k=>{const images=fieldImages(k);return `<div class="context-tile"><strong>${esc(state.model.schema.properties[k].title||k)}</strong>${images.length?`<img src="${esc(images[0])}" alt="${esc(k)} selected input" referrerpolicy="no-referrer"><small>Input supplied</small>`:`<div class="context-empty">${(state.model.schema.required||[]).includes(k)?'Required image':'Optional image'}</div>`}</div>`;}).join('');$('contextInputs').querySelectorAll('img').forEach(i=>i.onerror=()=>{i.hidden=true;});
     $('emptyStage').querySelector('h2').innerHTML='YOUR RESULT.<br><span>RIGHT HERE.</span>';$('emptyStage').querySelector('p').textContent='Prepare the model inputs, then generate. Your original result will appear here.';
   }else{$('emptyStage').querySelector('h2').innerHTML='A BLANK CANVAS.<br><span>ENDLESS DIRECTIONS.</span>';$('emptyStage').querySelector('p').textContent='Write a prompt. Choose your model. Give your next idea somewhere to land.';}
-  let missing=[];if(state.provider==='replicate'&&state.model)try{const input=preparePrompt(collectInputs(),state.model,w.hasPrompt?$('prompt').value:undefined);missing=missingInputs(input,state.model.schema);}catch{}
+  let issues=[];if(state.provider==='replicate'&&state.model)try{const input=preparePrompt(collectInputs(),state.model,w.hasPrompt?$('prompt').value:undefined);issues=inputErrors(input,state.model.schema,'submitted');}catch{}
   $('generate').innerHTML=icon(inputOnly?'arrow':'sparkles')+(inputOnly?'Run model':'Generate');$('generate').disabled=!state.activeSessionId||state.inputBusy>0||pendingGenerations.has(state.activeSessionId);$('contextRun').disabled=$('generate').disabled;
-  $('generate').title=state.inputBusy?'Saving input images…':missing.length?'Required: '+missing.join(', '):'Submit generation once';
+  $('generate').title=state.inputBusy?'Saving input files…':issues.length?issues[0].message:'Submit generation once';
 }
 on('advancedJson','input',()=>{captureSession();renderWorkflow();});
 function renderModelInfo(){
@@ -914,7 +950,7 @@ function setupFinalUI(){
    if(!state.activeSessionId)return toast('Open a project first.',true);
    if(state.provider==='replicate'){
      if(!state.model)await loadModel(state.modelId);
-     const fields=Object.entries(state.model.schema.properties||{}).filter(([k,v])=>isImageField(k,v));
+      const fields=Object.entries(state.model.schema.properties||{}).filter(([k,v])=>isFileField(k,v)&&classifySchemaField(k,v).media==='image');
      if(!fields.length)return toast('This model has no image input. Select an editing model to attach a reference.',true);
      if(fields.length===1){$('parameterForm').querySelector(`[data-reference="${CSS.escape(fields[0][0])}"]`)?.click();return;}
      if(!$('inputTargetDialog')){const d=document.createElement('dialog');d.id='inputTargetDialog';d.innerHTML=`<form class="dialog-head" method="dialog"><h2>Choose image input</h2><button class="icon-button" aria-label="Close input picker">${icon('close')}</button></form><div class="dialog-body" id="inputTargetList"></div>`;document.body.append(d);}

@@ -1,5 +1,18 @@
 # Bump notes
 
+## 2026-09-13 — Generic Replicate private file inputs
+
+CURRENT VER=0.6.0
+
+PENDING VER=0.7.0
+
+- Replaced image-name heuristics with centralized Replicate `Input` schema normalization. URI/file fields, plain URL strings, ordered URI arrays, enums, booleans, numbers, numeric arrays, objects and unsupported complex constructs now render distinct controls; Bria `image_url` no longer displays a file chooser.
+- Persisted local selections as explicit `lab_asset` references in project state and immutable job snapshots. Upload, save, hard reload, sidebar thumbnail and the primary Original/Reference canvas now share that authoritative asset without storing a browser File, blob URL, local path or R2 key.
+- Added one account/project/job-authorized server resolver immediately before Replicate submission. Files up to 256 KiB use bounded data URIs; larger files use 15-minute signed HTTPS grants scoped to one job and asset, with no public bucket, listing, arbitrary proxy or browser credential exposure.
+- Kept retry idempotency at the paid boundary: an expired pre-submission grant is prepared again while queued, while a known Replicate prediction is polled/reconciled rather than purchased twice. Existing signed callbacks and private output import remain in place.
+- Added current sanitized schema fixtures for required/optional single image, Bria's separate file and URL fields, two required face-swap images, image arrays, prompt-plus-image editing, prompt-free image, text-to-image and text-only generation. Unsupported unions fail visibly rather than submitting malformed input.
+- Added local D1/R2 security checks for cross-account, cross-project, deleted assets and expired/modified/path-swizzled grants; job snapshot/resubmission checks; and rendered 1920/1440/768/390 browser evidence for previews, canvas, URL-only, two-image and ordered-array workflows. No database migration is required.
+
 ## 2026-09-13 — Strict-CSP Google Images native renderer
 
 - Fixed the live Google Images failure at its actual boundary: the old documented `image.ready` callback returned `false`, allowing Google Programmable Search Element's eval-dependent default image template renderer to run under the Lab CSP.

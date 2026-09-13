@@ -3,6 +3,7 @@ import { authorize, proxyAuth, anonymousSubject } from '../lib/auth.mjs';
 import { ready, rate } from '../lib/storage.mjs';
 import { apiRoute } from '../lib/api.mjs';
 import { receiveWebhook } from '../lib/jobs.mjs';
+import {serveReplicateAsset} from '../lib/replicate-inputs.mjs';
 const publicAssets=new Set(['/favicon.ico','/backgrounds/labseo.webp','/auth-icons/discord.svg','/auth-icons/google.svg','/auth-icons/github.svg','/auth-icons/twitter.svg','/login','/login.html','/login.js','/login.css','/brand-assets/labs0.svg','/brand-assets/google.svg','/brand-fonts/display','/brand-fonts/body','/brand-fonts/bodybold','/brand-fonts/mono']);
 const headers={
   'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff', 'X-Frame-Options':'DENY', 'X-Robots-Tag':'noindex, nofollow', 'Referrer-Policy':'no-referrer',
@@ -17,6 +18,7 @@ export async function onRequest(context) {
     await ready(env);
     if(url.searchParams.has('handoff')&&['/','/research','/index.html','/account/login'].includes(url.pathname)&&request.method==='GET')return secured(new Response(null,{status:302,headers:{Location:'/login?handoff='+encodeURIComponent(url.searchParams.get('handoff'))}}));
     if(url.pathname==='/api/webhooks/replicate')response=await receiveWebhook(env,request);
+    else if(url.pathname.startsWith('/api/provider-files/'))response=await serveReplicateAsset(env,request);
     else if(url.pathname.startsWith('/api/auth/')) {await rate(env,await anonymousSubject(request),'auth');response=await proxyAuth(env,request,url.pathname.slice(10));}
     else if(publicAssets.has(url.pathname)&&['GET','HEAD'].includes(request.method)){publicPreview=url.pathname==='/backgrounds/labseo.webp';response=await context.next();}
     else {

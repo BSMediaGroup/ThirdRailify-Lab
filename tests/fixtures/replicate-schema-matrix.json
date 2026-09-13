@@ -1,0 +1,54 @@
+{
+  "observedAt": "2026-09-13",
+  "models": [
+    {
+      "case": "required single image",
+      "id": "lucataco/remove-bg",
+      "version": "95fcc2a26d3899cd6c2691c900465aaeff466285a65c14638cc5f36f34befaf1",
+      "input": {"type":"object","required":["image"],"properties":{"image":{"type":"string","format":"uri","title":"Image","description":"Input image"}}}
+    },
+    {
+      "case": "optional single image and prompt editing",
+      "id": "black-forest-labs/flux-kontext-pro",
+      "version": "897a70f5a7dbd8a0611413b3b98cf417b45f266bd595c571a22947619d9ae462",
+      "input": {"type":"object","required":["prompt"],"properties":{"prompt":{"type":"string","title":"Prompt"},"input_image":{"type":"string","format":"uri","nullable":true,"title":"Input Image","description":"Image to use as reference"}}}
+    },
+    {
+      "case": "two required images and prompt free",
+      "id": "cdingram/face-swap",
+      "version": "d1d6ea8c8be89d664a07a457526f7128109dee7030fdac424788d762c71ed111",
+      "input": {"type":"object","required":["swap_image","input_image"],"properties":{"swap_image":{"type":"string","format":"uri","title":"Swap Image","description":"Swap image"},"input_image":{"type":"string","format":"uri","title":"Input Image","description":"Target image"}}}
+    },
+    {
+      "case": "optional multi image array",
+      "id": "google/nano-banana",
+      "version": "5bdc2c7cd642ae33611d8c33f79615f98ff02509ab8db9d8ec1cc6c36d378fba",
+      "input": {"type":"object","required":["prompt"],"properties":{"prompt":{"type":"string","title":"Prompt"},"image_input":{"type":"array","items":{"type":"string","format":"uri"},"maxItems":14,"title":"Image Input","description":"Input images to transform or use as reference"}}}
+    },
+    {
+      "case": "required multi image editing",
+      "id": "qwen/qwen-image-edit-plus",
+      "version": "7677b9cc9967f7725fcf5e814a5a3446bf1d4b6ab0f9c15534dbbc54c7a088f2",
+      "input": {"type":"object","required":["image","prompt"],"properties":{"image":{"type":"array","items":{"type":"string","format":"uri"},"minItems":1,"title":"Image","description":"Images to use as reference"},"prompt":{"type":"string","title":"Prompt"}}}
+    },
+    {
+      "case": "file URI distinct from URL string and optional prompt",
+      "id": "bria/expand-image",
+      "version": "0d8d951a482d1f94125a7adbde188d7aa280a13fe0a444b9e786fce905e2af9a",
+      "input": {"type":"object","properties":{"image":{"type":"string","format":"uri","nullable":true,"title":"Image","description":"Image file","x-order":0},"image_url":{"type":"string","nullable":true,"title":"Image Url","description":"Image URL","x-order":1},"prompt":{"type":"string","nullable":true,"title":"Prompt"},"canvas_size":{"type":"array","items":{"type":"integer"},"title":"Canvas Size"},"aspect_ratio":{"allOf":[{"$ref":"#/components/schemas/aspect_ratio"}],"default":"1:1","x-order":2}}}
+    },
+    {
+      "case": "text image generation",
+      "id": "black-forest-labs/flux-schnell",
+      "version": "c846a69991daf4c0e5d016514849d14ee5b2e6846ce6b9d6f21369e564cfe51e",
+      "input": {"type":"object","required":["prompt"],"properties":{"prompt":{"type":"string","title":"Prompt"},"num_outputs":{"type":"integer","minimum":1,"maximum":4,"title":"Num Outputs"}}}
+    },
+    {
+      "case": "text only",
+      "id": "replicate/hello-world",
+      "version": "9dcd6d78e7c6560c340d916fe32e9f24aabfa331e5cce95fe31f77fb03121426",
+      "input": {"type":"object","required":["text"],"properties":{"text":{"type":"string","title":"Text"}}}
+    }
+  ],
+  "components": {"schemas":{"aspect_ratio":{"type":"string","enum":["1:1","2:3","3:2","3:4","4:3","4:5","5:4","9:16","16:9"],"title":"aspect_ratio"}}}
+}

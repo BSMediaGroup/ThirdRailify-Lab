@@ -12,6 +12,7 @@ import { onRequest } from '../functions/_middleware.js';
 import { resolveCredential } from '../lib/provider-profiles.mjs';
 import { searchStockMedia, selectStockResult } from '../lib/stock-media.mjs';
 import { recordUsage, usageDashboard } from '../lib/usage.mjs';
+import {labAssetReference} from '../public/model-schema.js';
 import { pathToFileURL } from 'node:url';
 const adminRoot=process.env.LAB_TEST_ADMIN_ROOT ? pathToFileURL(process.env.LAB_TEST_ADMIN_ROOT.replace(/[\\/]?$/, '/')) : new URL('../../ThirdRailify-Admin/',import.meta.url);
 const {onRequest:authHandler}=await import(new URL('functions/api/auth/[[path]].js',adminRoot));
@@ -24,7 +25,7 @@ async function schema(db,path){const source=(await readFile(path,'utf8')).replac
 test('real local D1/R2: authority, revisions, isolation, webhook, recovery and fail-closed routes',async t=>{
   const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("test")}}',compatibilityDate:'2026-01-20',d1Databases:['LAB_DB','THIRDRAILIFY_AUTH_DB'],r2Buckets:['LAB_FILES']});
   t.after(()=>mf.dispose());
-  const env=await mf.getBindings();env.LAB_JOBS={async send(){}};Object.assign(env,{LAB_ENABLED:'true',LAB_PAID_ENABLED:'true',LAB_ORIGIN:origin,REPLICATE_API_TOKEN:'local-fixture-token',OPENAI_API_KEY:'local-openai-token',PEXELS_API_KEY:'local-pexels-token',PIXABAY_API_KEY:'local-pixabay-token',UNSPLASH_ACCESS_KEY:'local-unsplash-token',REPLICATE_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('local-test-signature-key-32-bytes!').toString('base64'),GOOGLE_PSE_CX:'fixture-google-cx',LAB_VAULT_MASTER_KEY_V1:Buffer.alloc(32,7).toString('base64url')});
+  const env=await mf.getBindings();env.LAB_JOBS={async send(){}};Object.assign(env,{LAB_ENABLED:'true',LAB_PAID_ENABLED:'true',LAB_ORIGIN:origin,REPLICATE_API_TOKEN:'local-fixture-token',OPENAI_API_KEY:'local-openai-token',PEXELS_API_KEY:'local-pexels-token',PIXABAY_API_KEY:'local-pixabay-token',UNSPLASH_ACCESS_KEY:'local-unsplash-token',REPLICATE_WEBHOOK_SIGNING_SECRET:'whsec_'+Buffer.from('local-test-signature-key-32-bytes!').toString('base64'),LAB_ASSET_DELIVERY_SIGNING_SECRET:Buffer.alloc(32,9).toString('base64url'),GOOGLE_PSE_CX:'fixture-google-cx',LAB_VAULT_MASTER_KEY_V1:Buffer.alloc(32,7).toString('base64url')});
   await schema(env.LAB_DB,new URL('../migrations/0001_lab.sql',import.meta.url));
   await schema(env.LAB_DB,new URL('../migrations/0002_provider_vault_stock_usage.sql',import.meta.url));
   await schema(env.LAB_DB,new URL('../migrations/0003_provider_cost_intelligence.sql',import.meta.url));
@@ -49,11 +50,12 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
     assert.equal((await authorize(env,req())).owner,'a');await assert.rejects(authorize(env,req({Origin:'https://evil.example'})),/origin denied/);await assert.rejects(authorize(env,req({'X-Lab-CSRF':'wrong'})),/verification/);await assert.rejects(authorize(env,req({'X-Lab-Account':'b'})),/account changed/);
     await env.THIRDRAILIFY_AUTH_DB.prepare("UPDATE workshop_access SET state='revoked' WHERE account_id='a'").run();await assert.rejects(authorize(env,req()),/not enabled/);await env.THIRDRAILIFY_AUTH_DB.prepare("UPDATE workshop_access SET state='granted' WHERE account_id='a'").run();
   });
+  let uploadedAsset;
   await t.test('project create, stale revision race, private R2 and forged file ownership',async()=>{
     for(const [owner,p]of [['a',projectA],['b',projectB]])assert.equal((await (await api(owner,'/api/projects',{id:p,name:owner,project:{},revision:0})).json()).project.revision,1);
     const race=await Promise.allSettled([api('a','/api/projects',{id:projectA,name:'first',project:{},revision:1}),api('a','/api/projects',{id:projectA,name:'second',project:{},revision:1})]);assert.equal(race.filter(x=>x.status==='fulfilled').length,1);
     await assert.rejects(api('b','/api/projects',{id:projectA,name:'forged',project:{},revision:2}),/changed/);
-    const r=await (await api('a','/api/import',{projectId:projectA,dataUrl:'data:image/png;base64,'+png.toString('base64')})).json();const asset=r.asset;assert.deepEqual(Buffer.from(await (await api('a',asset.url)).arrayBuffer()),png);await assert.rejects(api('b',asset.url),/not found/);
+    const r=await (await api('a','/api/import',{projectId:projectA,dataUrl:'data:image/png;base64,'+png.toString('base64')})).json();const asset=uploadedAsset=r.asset;assert.deepEqual(Buffer.from(await (await api('a',asset.url)).arrayBuffer()),png);await assert.rejects(api('b',asset.url),/not found/);
     await assert.rejects(api('b','/api/projects',{id:projectB,name:'forged ref',project:{assetId:asset.id},revision:1}),/not found/);
     await api('a','/api/projects',{id:projectA,name:'with image',project:{assetId:asset.id},revision:2});await assert.rejects(api('a',`/api/assets/${asset.id}/delete`,{}),/referenced/);
   });
@@ -68,6 +70,14 @@ test('real local D1/R2: authority, revisions, isolation, webhook, recovery and f
       const originalWarn=console.warn;let warning;try{console.warn=(...parts)=>{warning=parts.join(' ');};const diagnostic=await(await api('a','/api/diagnostics/csp',{directive:'script-src',blockedHost:'evil.example/path?secret=never-log',documentPath:'/research?prompt=never-log',timestamp:'2026-09-13T00:00:00.000Z',correlationId:'11111111-1111-4111-8111-111111111111'})).json();assert.equal(diagnostic.recorded,true);}finally{console.warn=originalWarn;}assert.match(warning,/script-src.*evil\.example.*\/research/);assert.doesNotMatch(warning,/never-log|prompt=/);
       const missing=env.GOOGLE_PSE_CX;delete env.GOOGLE_PSE_CX;assert.equal((await(await api('a','/api/state')).json()).config.googleImages.configured,false);env.GOOGLE_PSE_CX=missing;
     }finally{globalThis.fetch=originalFetch;}
+  });
+  await t.test('Replicate job snapshot retains asset IDs and resolves once immediately before provider submission',async()=>{
+    const model={id:'fixture/image-edit',version:'b'.repeat(64),official:false,schema:{type:'object',properties:{image:{type:'string',format:'uri',title:'Image',description:'Image file'}},required:['image']}};let submissions=0,preparedInput;
+    const provider={key(){return 'fixture';},async model(){return model;},async createReplicate(snapshot){submissions++;preparedInput=snapshot.input;return {id:'typed-input-prediction',status:'processing'};},async request(){return {id:'typed-input-prediction',status:'processing'};}};
+    const request={provider:'replicate',model:'fixture/image-edit',prompt:'',input:{image:labAssetReference(uploadedAsset.id)},options:{},projectId:projectA,requestId:crypto.randomUUID()},created=await enqueue(env,auth('a'),request,provider),stored=await env.LAB_DB.prepare('SELECT snapshot FROM jobs WHERE id=?').bind(created.id).first();
+    assert.deepEqual(JSON.parse(stored.snapshot).input.image,labAssetReference(uploadedAsset.id));assert.equal((await env.LAB_DB.prepare('SELECT count(*) n FROM job_files WHERE job_id=? AND file_id=?').bind(created.id,uploadedAsset.id).first()).n,1);
+    await recover(env,provider,created.id);await recover(env,provider,created.id);assert.equal(submissions,1);assert.match(preparedInput.image,/^data:image\/png;base64,/);assert.equal(JSON.stringify(stored).includes(preparedInput.image),false);
+    await env.LAB_DB.prepare("UPDATE jobs SET status='canceled' WHERE id=?").bind(created.id).run();
   });
   await t.test('encrypted key profiles, stock contracts, 24-hour cache, Unsplash tracking and usage idempotency',async()=>{
     const secret='named-openai-secret-value-123',created=await(await api('a','/api/provider-profiles',{provider:'openai',label:'Editorial key',secret,isDefault:true})).json();assert.equal(JSON.stringify(created).includes(secret),false);const stored=await env.LAB_DB.prepare('SELECT * FROM provider_key_profiles WHERE id=?').bind(created.profile.id).first();assert.notEqual(stored.ciphertext,secret);assert.equal(await resolveCredential(env,'a','openai','',created.profile.id).then(x=>x.secret),secret);
