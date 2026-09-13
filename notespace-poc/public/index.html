@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark"><meta name="referrer" content="no-referrer">
+<title>Notespace · Third Railify Lab</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23141319'/%3E%3Cpath d='M23 5 9 22h10l-3 13L31 17H21z' fill='%23edc767'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<svg class="symbol-defs" xmlns="http://www.w3.org/2000/svg"><defs id="symbols"></defs></svg>
+<header class="app-header">
+  <button class="brand" data-action="library" aria-label="Notespace library"><span class="brand-mark"><svg viewBox="0 0 40 40" aria-hidden="true"><path d="M24 4 10 21h10l-4 14L32 17H22z"/></svg></span><span class="brand-copy"><strong>THIRD RAILIFY <em>LAB</em></strong><small>CREATIVE WORKSHOP</small></span></button>
+  <div class="breadcrumb"><span>WORKSHOP</span><i>/</i><strong>Notespace</strong><span class="version-chip">POC 0.1</span></div>
+  <div class="header-right"><span class="offline-badge"><span></span> LOCAL FIRST</span><button class="icon-button" data-action="help" data-tip="Guide & keyboard shortcuts" aria-label="Guide & keyboard shortcuts" data-icon="help"></button><button class="operator" data-action="identity"><span class="avatar" id="operator-initial">D</span><span><strong id="operator-name">Daniel</strong><small>Local editor · no account login</small></span><i data-icon="chevron"></i></button></div>
+</header>
+<nav class="main-rail" aria-label="Workspace navigation">
+  <button class="rail-button active" data-action="canvas" data-tip="Notespace" aria-label="Notespace" data-icon="board"></button>
+  <button class="rail-button" data-action="library" data-tip="Your boards" aria-label="Your boards" data-icon="folder"></button>
+  <button class="rail-button" data-action="tasks" data-tip="Honey-do list" aria-label="Honey-do list" data-icon="checklist"></button>
+  <button class="rail-button" data-action="media" data-tip="Images & GIFs" aria-label="Images & GIFs" data-icon="image"></button>
+  <span class="rail-line"></span>
+  <button class="rail-button" data-action="appearance" data-tip="Canvas appearance" aria-label="Canvas appearance" data-icon="palette"></button>
+  <button class="rail-button" data-action="export" data-tip="Export & import" aria-label="Export & import" data-icon="download"></button>
+  <span class="rail-spacer"></span>
+  <button class="rail-button" data-action="help" data-tip="Keyboard shortcuts" aria-label="Keyboard shortcuts" data-icon="keyboard"></button>
+</nav>
+<main class="workspace">
+  <section class="board-bar" aria-label="Board controls">
+    <button class="icon-button boards-back" data-action="library" data-tip="All boards" aria-label="All boards" data-icon="grid"></button>
+    <div class="board-identity"><button id="board-title" data-action="board-details">The next big thing</button><div><i data-icon="lock"></i><span id="board-context">Starter board · sample content</span><span class="separator-dot">·</span><span id="save-state" role="status">Opening local board…</span></div></div>
+    <div class="board-actions"><span id="presence" class="presence" title="Other windows on this device"></span><button class="icon-button" data-action="undo" data-tip="Undo · Ctrl Z" aria-label="Undo" data-icon="undo" id="undo-button"></button><button class="icon-button" data-action="redo" data-tip="Redo · Ctrl Shift Z" aria-label="Redo" data-icon="redo" id="redo-button"></button><span class="vertical-rule"></span><button class="quiet-button cinema-button" data-action="cinema" title="Declutter the workspace"><i data-icon="cinema"></i><span>Cinema</span></button><button class="icon-button" data-action="popout" data-tip="Pop out this board" aria-label="Pop out this board" data-icon="popout"></button><button class="gold-button share-button" data-action="share"><i data-icon="share"></i><span>Share board</span></button><button class="icon-button" data-action="inspector" data-tip="Show / hide inspector" aria-label="Show / hide inspector" data-icon="panel"></button></div>
+  </section>
+  <section id="canvas-area" class="canvas-area">
+    <div id="viewport" class="viewport" tabindex="0" aria-label="Interactive brainstorming canvas">
+      <div id="canvas-background" class="canvas-background"></div><div id="canvas-pattern" class="canvas-pattern"></div>
+      <div id="world" class="world"><svg id="edges" class="edges" xmlns="http://www.w3.org/2000/svg"></svg><div id="objects" class="objects"></div></div>
+      <div id="marquee" class="marquee" hidden></div><div id="cursors" class="cursors"></div>
+    </div>
+    <div class="canvas-topline"><span class="canvas-label">NOTESPACE <span>/</span> <b id="canvas-code">vn7TnJ5</b></span><button class="icon-button" data-action="find" data-tip="Find in board · Ctrl F" aria-label="Find in board" data-icon="search"></button></div>
+    <div class="tool-dock" role="toolbar" aria-label="Canvas tools">
+      <button class="tool active" data-tool="select" data-tip="Select · V" aria-label="Select" data-icon="cursor"></button>
+      <button class="tool" data-tool="hand" data-tip="Pan · H / hold Space" aria-label="Pan" data-icon="hand"></button><span class="vertical-rule"></span>
+      <button class="tool" data-tool="note" data-tip="Sticky note · N" aria-label="Add sticky note" data-icon="note"></button>
+      <button class="tool" data-tool="text" data-tip="Text · T" aria-label="Add text" data-icon="text"></button>
+      <button class="tool" data-tool="checklist" data-tip="Honey-do list · L" aria-label="Add checklist" data-icon="checklist"></button>
+      <button class="tool" data-tool="frame" data-tip="Container · F" aria-label="Add container" data-icon="frame"></button>
+      <button class="tool" data-action="media" data-tip="Images & GIFs · I" aria-label="Add media" data-icon="image"></button><span class="vertical-rule"></span>
+      <button class="tool" data-tool="connector" data-tip="Attached / free leader · C" aria-label="Connector" data-icon="arrow"></button>
+      <button class="tool" data-tool="draw" data-tip="Freehand · P" aria-label="Draw" data-icon="pen"></button>
+      <button class="tool" data-tool="shape" data-tip="Shape · R" aria-label="Add shape" data-icon="shapes"></button>
+    </div>
+    <div id="tool-hint" class="tool-hint" role="status" hidden></div>
+    <div id="selection-toolbar" class="selection-toolbar" hidden></div>
+    <div class="canvas-bottom"><div class="navigation-capsule"><button class="icon-button" data-action="zoom-out" aria-label="Zoom out" data-tip="Zoom out" data-icon="minus"></button><button id="zoom-value" data-action="zoom-reset" title="Reset to 100%">100%</button><button class="icon-button" data-action="zoom-in" aria-label="Zoom in" data-tip="Zoom in" data-icon="plus"></button><span class="vertical-rule"></span><button class="icon-button" data-action="fit" aria-label="Fit board" data-tip="Fit board · Shift 1" data-icon="fit"></button><button class="icon-button" data-action="fullscreen" aria-label="Fullscreen" data-tip="Fullscreen" data-icon="fullscreen"></button></div><div class="canvas-hint"><kbd>SPACE</kbd> pan <span>·</span> <kbd>CTRL</kbd> + scroll zoom</div><button class="minimap-wrap" data-action="fit" aria-label="Fit complete board"><svg id="minimap" viewBox="0 0 150 85" aria-hidden="true"></svg></button></div>
+    <aside id="find-panel" class="find-panel" hidden></aside>
+  </section>
+  <aside class="inspector" id="inspector" aria-label="Object inspector"><div class="inspector-header"><div><span class="eyebrow">DETAILS / STRUCTURE</span><h2 id="inspector-title">Canvas overview</h2></div><button class="icon-button" data-action="inspector" aria-label="Close inspector" data-icon="close"></button></div><div id="inspector-body" class="inspector-body"></div></aside>
+  <section id="library-page" class="library-page" hidden></section>
+</main>
+<footer class="status-bar"><span><span class="status-light"></span><b id="storage-status">Local browser storage</b><span class="footer-dim"> · Cloudflare not connected</span></span><span id="object-count">0 objects</span><span id="bottom-hint">IDEAS DESERVE A LITTLE SPACE.</span></footer>
+<div id="modal-root"></div><div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+<input id="media-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp,image/svg+xml,image/x-icon" multiple hidden>
+<input id="background-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden>
+<input id="import-file" type="file" accept=".json,.notespace" hidden>
+<script src="/model.js"></script><script src="/seed.js"></script><script src="/app.js"></script>
+</body></html>

@@ -1,0 +1,131 @@
+TAP version 13
+# Subtest: seven-character case-sensitive base62 codes, 10,000 unique samples
+ok 1 - seven-character case-sensitive base62 codes, 10,000 unique samples
+  ---
+  duration_ms: 36.982877
+  type: 'test'
+  ...
+# Subtest: parenting and detaching preserve world position
+ok 2 - parenting and detaching preserve world position
+  ---
+  duration_ms: 1.117564
+  type: 'test'
+  ...
+# Subtest: moving a parent moves a child exactly once
+ok 3 - moving a parent moves a child exactly once
+  ---
+  duration_ms: 0.178032
+  type: 'test'
+  ...
+# Subtest: cycle and non-container parenting are rejected
+ok 4 - cycle and non-container parenting are rejected
+  ---
+  duration_ms: 0.238771
+  type: 'test'
+  ...
+# Subtest: group and ungroup preserve child geometry
+ok 5 - group and ungroup preserve child geometry
+  ---
+  duration_ms: 0.414169
+  type: 'test'
+  ...
+# Subtest: deleting a container removes descendants and bound connections
+ok 6 - deleting a container removes descendants and bound connections
+  ---
+  duration_ms: 0.17635
+  type: 'test'
+  ...
+# Subtest: search finds text, tags, assignments and typed metadata
+ok 7 - search finds text, tags, assignments and typed metadata
+  ---
+  duration_ms: 0.321763
+  type: 'test'
+  ...
+# Subtest: field-level patches preserve unrelated concurrent edits
+ok 8 - field-level patches preserve unrelated concurrent edits
+  ---
+  duration_ms: 0.600614
+  type: 'test'
+  ...
+# Subtest: stacking order is part of the persisted command
+ok 9 - stacking order is part of the persisted command
+  ---
+  duration_ms: 0.419097
+  type: 'test'
+  ...
+# Subtest: import rejects duplicate object IDs and hierarchy cycles
+ok 10 - import rejects duplicate object IDs and hierarchy cycles
+  ---
+  duration_ms: 1.245122
+  type: 'test'
+  ...
+# Subtest: import enforces format and node-count limits
+ok 11 - import enforces format and node-count limits
+  ---
+  duration_ms: 2.586896
+  type: 'test'
+  ...
+# Subtest: remote media requires HTTPS without credentials and denies local addresses
+ok 12 - remote media requires HTTPS without credentials and denies local addresses
+  ---
+  duration_ms: 0.403464
+  type: 'test'
+  ...
+# Subtest: typed fields are data, never executable expressions
+ok 13 - typed fields are data, never executable expressions
+  ---
+  duration_ms: 0.213244
+  type: 'test'
+  ...
+# Subtest: provider GIF export holds identity not cached media bytes
+ok 14 - provider GIF export holds identity not cached media bytes
+  ---
+  duration_ms: 0.23124
+  type: 'test'
+  ...
+# Subtest: read-only loopback server and nested board routes
+    # Subtest: health states no Cloudflare and no secret values
+    ok 1 - health states no Cloudflare and no secret values
+      ---
+      duration_ms: 1.558533
+      type: 'test'
+      ...
+    # Subtest: deep-linked board uses root-relative script/style paths
+    ok 2 - deep-linked board uses root-relative script/style paths
+      ---
+      duration_ms: 9.927545
+      type: 'test'
+      ...
+    # Subtest: headers preserve static CSP and no-store
+    ok 3 - headers preserve static CSP and no-store
+      ---
+      duration_ms: 2.118617
+      type: 'test'
+      ...
+    # Subtest: writes, other hosts and hidden files are rejected
+    ok 4 - writes, other hosts and hidden files are rejected
+      ---
+      duration_ms: 5.850077
+      type: 'test'
+      ...
+    # Subtest: single-file package has no script or stylesheet dependency
+    ok 5 - single-file package has no script or stylesheet dependency
+      ---
+      duration_ms: 0.972732
+      type: 'test'
+      ...
+    1..5
+ok 15 - read-only loopback server and nested board routes
+  ---
+  duration_ms: 80.798452
+  type: 'test'
+  ...
+1..15
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 121.853405

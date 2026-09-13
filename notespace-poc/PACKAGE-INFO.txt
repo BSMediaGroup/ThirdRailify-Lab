@@ -1,0 +1,4 @@
+Third Railify Notespace POC 0.1.0
+Open START-NOTESPACE.cmd (existing Node 22+) or OPEN-NOTESPACE.html.
+No Cloudflare, login, dependency install, font bundle or production changes.
+Read README.md first; local data only. Export independent backups.

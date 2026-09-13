@@ -1,0 +1,21 @@
+{
+  "mode": "Offline DOM interaction with in-memory IndexedDB API fixture; native download captured as blob. No policy modified.",
+  "checks": [
+    "Group selection creates a real nested parent",
+    "Ungroup preserves both objects",
+    "Attached connector creates canonical object endpoints",
+    "Free leader retains free coordinates",
+    "Freehand gesture persists a vector stroke",
+    "Drag-resize updates dimensions",
+    "Lock is persisted",
+    "Editable export includes media and structure",
+    "Animated GIF bytes are exported, not a flattened still",
+    "Export does not include provider client keys",
+    "Round-trip import uses a new seven-character code",
+    "Round-trip preserves nodes, fields and connections",
+    "Round-trip media is decoded",
+    "Custom background image stores a local asset reference",
+    "No application exceptions"
+  ],
+  "pageErrors": []
+}

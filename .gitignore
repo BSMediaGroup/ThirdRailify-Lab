@@ -8,3 +8,4 @@ dist/
 !.env.example
 .dev.vars*
 *.log
+ThirdRailify-Notespace-POC-0.1.0.zip
